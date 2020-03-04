@@ -4,10 +4,11 @@
 
 /* ootx data decoder */
 
+#include "ootx_decoder.h"
+#include "string.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
-#include "ootx_decoder.h"
 
 #ifdef NOZLIB
 #include "crc32.h"
@@ -17,12 +18,12 @@
 
 //char* fmt_str = "L Y HMD %d 5 1 206230 %d\n";
 
-#define MAX_BUFF_SIZE 64
-
-void (*ootx_packet_clbk)(ootx_decoder_context * ctx, ootx_packet* packet) = NULL;
-void (*ootx_bad_crc_clbk)(ootx_decoder_context * ctx, ootx_packet* packet, uint32_t crc) = NULL;
-
 void ootx_pump_bit(ootx_decoder_context *ctx, uint8_t dbit);
+
+void ootx_error(ootx_decoder_context *ctx, const char *msg) {
+	if (ctx->ootx_error_clbk)
+		ctx->ootx_error_clbk(ctx, msg);
+}
 
 void ootx_init_decoder_context(ootx_decoder_context *ctx) {
 	ctx->buf_offset = 0;
@@ -31,18 +32,15 @@ void ootx_init_decoder_context(ootx_decoder_context *ctx) {
 	ctx->preamble = 0XFFFFFFFF;
 	ctx->bits_processed = 0;
 	ctx->found_preamble = 0;
+	ctx->ignore_sync_bit_error = 0;
 
-	ctx->buffer = (uint8_t*)malloc(MAX_BUFF_SIZE);
 	ctx->payload_size = (uint16_t*)ctx->buffer;
 	*(ctx->payload_size) = 0;
 }
 
 void ootx_free_decoder_context(ootx_decoder_context *ctx) {
-	free(ctx->buffer);
-	ctx->buffer = NULL;
 	ctx->payload_size = NULL;
 }
-
 uint8_t ootx_decode_bit(uint32_t length) {
 	uint8_t t = (uint8_t)((length - 2750) / 500); //why 2750?
 //	return ((t & 0x02)>0)?0xFF:0x00; //easier if we need to bitshift right
@@ -61,6 +59,7 @@ void ootx_reset_buffer(ootx_decoder_context *ctx) {
 	ctx->buf_offset = 0;
 	ctx->buffer[0] = 0;
 	ctx->bits_written = 0;
+	ctx->found_preamble = 0;
 	*(ctx->payload_size) = 0;
 }
 
@@ -70,7 +69,7 @@ void ootx_inc_buffer_offset(ootx_decoder_context *ctx) {
 //	assert(ctx->buf_offset<MAX_BUFF_SIZE);
 
 	/* the buffer is going to overflow, wrap the buffer and don't write more data until the preamble is found again */
-	if(ctx->buf_offset>=MAX_BUFF_SIZE) {
+	if (ctx->buf_offset >= OOTX_MAX_BUFF_SIZE) {
 		ctx->buf_offset = 0;
 		ctx->found_preamble = 0;
 	}
@@ -106,7 +105,7 @@ void ootx_pump_bit(ootx_decoder_context *ctx, uint8_t dbit) {
 	if ( ootx_detect_preamble(ctx, dbit) ) {
 		/*	data stream can start over at any time so we must
 			always look for preamble bits */
-		//printf("Preamble found\n");
+		ootx_error(ctx, "Preamble found");
 		ootx_reset_buffer(ctx);
 		ctx->bits_processed = 0;
 		ctx->found_preamble = 1;
@@ -116,8 +115,14 @@ void ootx_pump_bit(ootx_decoder_context *ctx, uint8_t dbit) {
 //		printf("drop %d\n", dbit);
 		if( !dbit )
 		{
-			//printf("Bad sync bit\n");
-			ootx_reset_buffer(ctx);
+			// printf("Bad sync bit\n");
+			if (ctx->ignore_sync_bit_error == 0) {
+				if (ctx->found_preamble)
+					ootx_error(ctx, "OOTX Decoder: Bad sync bit");
+				ootx_reset_buffer(ctx);
+			} else {
+				ootx_error(ctx, "OOTX Decoder: Ignoring bad sync bit");
+			}
 		}
 		ctx->bits_processed = 0;
 	}
@@ -147,16 +152,16 @@ void ootx_pump_bit(ootx_decoder_context *ctx, uint8_t dbit) {
 
 			op.length = *(ctx->payload_size);
 			op.data = ctx->buffer+2;
-			op.crc32 = *(uint32_t*)(op.data+padded_length);
+			memcpy(&op.crc32, op.data + padded_length, sizeof(uint32_t));
 
 			uint32_t crc = crc32( 0L, 0 /*Z_NULL*/, 0 );
 			crc = crc32( crc, op.data,op.length);
 
 			if (crc != op.crc32) {
-				if (ootx_bad_crc_clbk != NULL) ootx_bad_crc_clbk(ctx, &op,crc);
-			}
-			else if (ootx_packet_clbk != NULL) {
-				ootx_packet_clbk(ctx,&op);
+				if (ctx->ootx_bad_crc_clbk != NULL)
+					ctx->ootx_bad_crc_clbk(ctx, &op, crc);
+			} else if (ctx->ootx_packet_clbk != NULL) {
+				ctx->ootx_packet_clbk(ctx, &op);
 			}
 
 			ootx_reset_buffer(ctx);
@@ -198,7 +203,7 @@ float _half_to_float(uint8_t* data) {
 	fnum.f = 0;
 
 	//sign
-	fnum.i = (x & 0x8000)<<16;
+	fnum.i = (((uint32_t)x & 0x8000) << 16);
 
 	if ((x & 0x7FFF) == 0) return fnum.f; //signed zero
 
@@ -298,4 +303,51 @@ void print_lighthouse_info_v6(lighthouse_info_v6* lhi) {
 		lhi->fcal_1_gibmag,
 		lhi->mode_current,
 		lhi->sys_faults);
+}
+
+void init_lighthouse_info_v15(lighthouse_info_v15 *lhi, uint8_t *data) {
+#pragma pack(push, 1)
+	typedef struct {
+		uint16_t fw_version;		// Firmware version (bit 15..6), protocol version (bit 5..0)
+		uint32_t id;				// Unique identifier of the base station
+		uint16_t fcal_phase[2];		//"phase" for rotor 0
+		uint16_t fcal_tilt[2];		//"tilt" for rotor 0
+		uint8_t unknown1;			// Dunno, was 7 then 8.
+		uint8_t ootx_model;			// 'OOTX model'?
+		uint16_t fcal_curve[2];		//"curve" for rotor 0
+		int8_t accel_dir[3];		//"orientation vector"
+		uint16_t fcal_gibphase[2];  //"gibbous phase" for rotor 0 (normalized angle)
+		uint16_t fcal_gibmag[2];	//"gibbous magnitude" for rotor 0
+		uint8_t mode_current;		// Some bit flag with the mode attached?
+		uint8_t sys_faults;			//
+		uint16_t fcal_ogeephase[2]; //"gibbous phase" for rotor 0 (normalized angle)
+		uint16_t fcal_ogeemag[2];   //"gibbous magnitude" for rotor 0
+		uint16_t nonce;				//"fault detect flags" (should be 0)
+	} lighthouse_info_v15_packed;
+#pragma pack(pop)
+
+	lighthouse_info_v15_packed *d = (lighthouse_info_v15_packed *)data;
+
+	lhi->fw_version = d->fw_version;
+	lhi->id = d->id;
+
+	for (int i = 0; i < 2; i++) {
+		lhi->fcal_phase[i] = _half_to_float((uint8_t *)&d->fcal_phase[i]);
+		lhi->fcal_tilt[i] = _half_to_float((uint8_t *)&d->fcal_tilt[i]);
+		lhi->fcal_curve[i] = _half_to_float((uint8_t *)&d->fcal_curve[i]);
+		lhi->fcal_gibphase[i] = _half_to_float((uint8_t *)&d->fcal_gibphase[i]);
+		lhi->fcal_gibmag[i] = _half_to_float((uint8_t *)&d->fcal_gibmag[i]);
+		lhi->fcal_ogeemag[i] = _half_to_float((uint8_t *)&d->fcal_ogeemag[i]);
+		lhi->fcal_ogeephase[i] = _half_to_float((uint8_t *)&d->fcal_ogeephase[i]);
+	}
+
+	lhi->unknown1 = d->unknown1;
+	lhi->ootx_model = d->ootx_model;
+
+	for (int i = 0; i < 3; i++)
+		lhi->accel_dir[i] = d->accel_dir[i];
+
+	lhi->sys_faults = d->sys_faults;
+	lhi->mode_current = d->mode_current;
+	lhi->nonce = d->nonce;
 }

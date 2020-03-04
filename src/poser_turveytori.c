@@ -85,13 +85,14 @@ typedef struct
 	//Stuff
 
 #define OLD_ANGLES_BUFF_LEN 3
-	FLT oldAngles[SENSORS_PER_OBJECT][2][NUM_LIGHTHOUSES][OLD_ANGLES_BUFF_LEN]; // sensor, sweep axis, lighthouse, instance
-	int angleIndex[NUM_LIGHTHOUSES][2]; // index into circular buffer ahead. separate index for each axis.
-	int lastAxis[NUM_LIGHTHOUSES];
+	FLT oldAngles[SENSORS_PER_OBJECT][2][NUM_GEN1_LIGHTHOUSES]
+				 [OLD_ANGLES_BUFF_LEN];		 // sensor, sweep axis, lighthouse, instance
+	int angleIndex[NUM_GEN1_LIGHTHOUSES][2]; // index into circular buffer ahead. separate index for each axis.
+	int lastAxis[NUM_GEN1_LIGHTHOUSES];
 
-	Point lastLhPos[NUM_LIGHTHOUSES];
-//	FLT lastLhRotAxisAngle[NUM_LIGHTHOUSES][4];
-	FLT lastLhRotQuat[NUM_LIGHTHOUSES][4];
+	Point lastLhPos[NUM_GEN1_LIGHTHOUSES];
+	//	FLT lastLhRotAxisAngle[NUM_GEN1_LIGHTHOUSES][4];
+	FLT lastLhRotQuat[NUM_GEN1_LIGHTHOUSES][4];
 } ToriData;
 
 
@@ -1449,7 +1450,7 @@ static Point SolveForLighthouse(FLT posOut[3], FLT quatOut[4], TrackedObject *ob
 		FLT negZ[3] = {0, 0, 1};
 		quatfrom2vectors(assumedObj.Rot, toriData->down, negZ);
 
-		PoserData_lighthouse_pose_func(pd, so, lh, additionalTx, &lighthousePose, &assumedObj);
+		PoserData_lighthouse_pose_func(pd, so, lh, &lighthousePose, &assumedObj);
 	}
 
 
@@ -1490,23 +1491,23 @@ static Point SolveForLighthouse(FLT posOut[3], FLT quatOut[4], TrackedObject *ob
 
 	quatnormalize(newOrientation, newOrientation);
 
-	so->OutPose.Pos[0] = wcPos[0];
-	so->OutPose.Pos[1] = wcPos[1];
-	so->OutPose.Pos[2] = wcPos[2];
+	so->OutPoseIMU.Pos[0] = wcPos[0];
+	so->OutPoseIMU.Pos[1] = wcPos[1];
+	so->OutPoseIMU.Pos[2] = wcPos[2];
 
-	so->OutPose.Rot[0] = newOrientation[0];
-	so->OutPose.Rot[1] = newOrientation[1];
-	so->OutPose.Rot[2] = newOrientation[2];
-	so->OutPose.Rot[3] = newOrientation[3];
+	so->OutPoseIMU.Rot[0] = newOrientation[0];
+	so->OutPoseIMU.Rot[1] = newOrientation[1];
+	so->OutPoseIMU.Rot[2] = newOrientation[2];
+	so->OutPoseIMU.Rot[3] = newOrientation[3];
 
-	so->FromLHPose[lh].Pos[0] = so->OutPose.Pos[0];
-	so->FromLHPose[lh].Pos[1] = so->OutPose.Pos[1];
-	so->FromLHPose[lh].Pos[2] = so->OutPose.Pos[2];
+	so->FromLHPose[lh].Pos[0] = so->OutPoseIMU.Pos[0];
+	so->FromLHPose[lh].Pos[1] = so->OutPoseIMU.Pos[1];
+	so->FromLHPose[lh].Pos[2] = so->OutPoseIMU.Pos[2];
 
-	so->FromLHPose[lh].Rot[0] = so->OutPose.Rot[0];
-	so->FromLHPose[lh].Rot[1] = so->OutPose.Rot[1];
-	so->FromLHPose[lh].Rot[2] = so->OutPose.Rot[2];
-	so->FromLHPose[lh].Rot[3] = so->OutPose.Rot[3];
+	so->FromLHPose[lh].Rot[0] = so->OutPoseIMU.Rot[0];
+	so->FromLHPose[lh].Rot[1] = so->OutPoseIMU.Rot[1];
+	so->FromLHPose[lh].Rot[2] = so->OutPoseIMU.Rot[2];
+	so->FromLHPose[lh].Rot[3] = so->OutPoseIMU.Rot[3];
 
 	if (ttDebug) printf(" <% 04.4f, % 04.4f, % 04.4f >  ", wcPos[0], wcPos[1], wcPos[2]);
 
@@ -1514,10 +1515,10 @@ static Point SolveForLighthouse(FLT posOut[3], FLT quatOut[4], TrackedObject *ob
 	posOut[1] = wcPos[1];
 	posOut[2] = wcPos[2];
 
-	quatOut[0] = so->OutPose.Rot[0];
-	quatOut[1] = so->OutPose.Rot[1];
-	quatOut[2] = so->OutPose.Rot[2];
-	quatOut[3] = so->OutPose.Rot[3];
+	quatOut[0] = so->OutPoseIMU.Rot[0];
+	quatOut[1] = so->OutPoseIMU.Rot[1];
+	quatOut[2] = so->OutPoseIMU.Rot[2];
+	quatOut[3] = so->OutPoseIMU.Rot[3];
 
 	if (logFile)
 	{
@@ -1567,7 +1568,7 @@ static void QuickPose(SurviveObject *so, PoserData *pd, SurvivePose *additionalT
 
 	TrackedObject *to;
 
-	to = malloc(sizeof(TrackedObject) + (SENSORS_PER_OBJECT * sizeof(TrackedSensor)));
+	to = SV_MALLOC(sizeof(TrackedObject) + (SENSORS_PER_OBJECT * sizeof(TrackedSensor)));
 
 	{
 		int sensorCount = 0;
@@ -1665,7 +1666,7 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 
 	if (!td)
 	{
-		so->PoserData = td = malloc(sizeof(ToriData));
+		so->PoserData = td = SV_MALLOC(sizeof(ToriData));
 		memset(td, 0, sizeof(ToriData));
 	}
 
@@ -1689,22 +1690,20 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 	}
 	case POSERDATA_LIGHT:
 	{
-		PoserDataLight * l = (PoserDataLight*)poserData;
+		PoserDataLightGen1 *l = (PoserDataLightGen1 *)poserData;
 
-		if (l->lh >= NUM_LIGHTHOUSES || l->lh < 0)
-		{
+		if (l->common.lh >= NUM_GEN1_LIGHTHOUSES || l->common.lh < 0) {
 			// should never happen.  Famous last words...
 			break;
 		}
 		int axis = l->acode & 0x1;
-		//printf( "LIG:%s %d @ %f rad, %f s (AC %d) (TC %d)\n", so->codename, l->sensor_id, l->angle, l->length, l->acode, l->timecode );
+		// printf( "LIG:%s %d @ %f rad, %f s (AC %d) (TC %d)\n", so->codename, l->sensor_id, l->angle, l->length,
+		// l->common.acode, l->timecode );
 
 		SurvivePose additionalTx;
-		if ((td->lastAxis[l->lh] != (l->acode & 0x1)) )
-		{
+		if ((td->lastAxis[l->common.lh] != (l->acode & 0x1))) {
 
-
-			if (0 == l->lh && axis) // only once per full cycle...
+			if (0 == l->common.lh && axis) // only once per full cycle...
 			{
 				static unsigned int counter = 1;
 
@@ -1714,7 +1713,7 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 				if (counter % 4 == 0)
 					QuickPose(so, poserData, &additionalTx, 0);
 			}
-			if (1 == l->lh && axis) // only once per full cycle...
+			if (1 == l->common.lh && axis) // only once per full cycle...
 			{
 				static unsigned int counter = 1;
 
@@ -1725,19 +1724,19 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 					QuickPose(so, poserData, &additionalTx, 1);
 			}
 			// axis changed, time to increment the circular buffer index.
-			td->angleIndex[l->lh][axis]++;
-			td->angleIndex[l->lh][axis] = td->angleIndex[l->lh][axis] % OLD_ANGLES_BUFF_LEN;
+			td->angleIndex[l->common.lh][axis]++;
+			td->angleIndex[l->common.lh][axis] = td->angleIndex[l->common.lh][axis] % OLD_ANGLES_BUFF_LEN;
 
 			// and clear out the data.
 			for (int i=0; i < SENSORS_PER_OBJECT; i++)
 			{
-				td->oldAngles[i][axis][l->lh][td->angleIndex[l->lh][axis]] = 0;
+				td->oldAngles[i][axis][l->common.lh][td->angleIndex[l->common.lh][axis]] = 0;
 			}
 
-			td->lastAxis[l->lh] = axis;
+			td->lastAxis[l->common.lh] = axis;
 		}
 
-		td->oldAngles[l->sensor_id][axis][l->lh][td->angleIndex[l->lh][axis]] = l->angle;
+		td->oldAngles[l->common.sensor_id][axis][l->common.lh][td->angleIndex[l->common.lh][axis]] = l->common.angle;
 		break;
 	}
 	case POSERDATA_FULL_SCENE:
@@ -1746,7 +1745,7 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 
 		PoserDataFullScene * fs = (PoserDataFullScene*)poserData;
 
-		to = malloc(sizeof(TrackedObject) + (SENSORS_PER_OBJECT * sizeof(TrackedSensor)));
+		to = SV_MALLOC(sizeof(TrackedObject) + (SENSORS_PER_OBJECT * sizeof(TrackedSensor)));
 
 		// if we rotate the internal reference frame of of the tracked object from having -z being arbitrary
 		// to being the down direction as defined by the accelerometer, then when we have come up
@@ -1872,7 +1871,7 @@ int PoserTurveyTori( SurviveObject * so, PoserData * poserData )
 		config_set_lighthouse(ctx->lh_config, &ctx->bsd[0], 0);
 		config_set_lighthouse(ctx->lh_config, &ctx->bsd[1], 1);
 
-		config_save(ctx, "config.json");
+		config_save(ctx, survive_configs(ctx, "configfile", SC_GET, "config.json"));
 
 		free(to);
 		//printf( "Full scene data.\n" );

@@ -3,43 +3,33 @@
 #ifndef _LINMATH_H
 #define _LINMATH_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifndef LINMATH_EXPORT
-#ifdef _WIN32
-#define LINMATH_EXPORT extern __declspec(dllexport)
+#if defined(_WIN32) && !defined(TCC)
+#define LINMATH_EXPORT __declspec(dllimport)
 #else
 #define LINMATH_EXPORT __attribute__((visibility("default")))
 #endif
 #endif
 
 // Yes, I know it's kind of arbitrary.
-#define DEFAULT_EPSILON 0.001
+#define DEFAULT_EPSILON 0.0000000001
 
 // For printf
 #define PFTHREE(x) (x)[0], (x)[1], (x)[2]
 #define PFFOUR(x) (x)[0], (x)[1], (x)[2], (x)[3]
 
-#define LINMATHPI ((FLT)3.141592653589)
+#define LINMATHPI ((FLT)3.14159265358979323846)
 
 // uncomment the following line to use double precision instead of single precision.
 //#define USE_DOUBLE
 
-#ifdef USE_DOUBLE
-
-#define FLT double
-#define FLT_SQRT sqrt
-#define FLT_TAN tan
-#define FLT_SIN sin
-#define FLT_COS cos
-#define FLT_ACOS acos
-#define FLT_ASIN asin
-#define FLT_ATAN2 atan2
-#define FLT_FABS__ fabs
-
-#else
+#ifdef USE_FLOAT
 
 #define FLT float
 #define FLT_SQRT sqrtf
@@ -50,6 +40,21 @@ extern "C" {
 #define FLT_ASIN asinf
 #define FLT_ATAN2 atan2f
 #define FLT_FABS__ fabsf
+#define FLT_STRTO strtof
+
+#else
+
+#define USE_DOUBLE 1
+#define FLT double
+#define FLT_SQRT sqrt
+#define FLT_TAN tan
+#define FLT_SIN sin
+#define FLT_COS cos
+#define FLT_ACOS acos
+#define FLT_ASIN asin
+#define FLT_ATAN2 atan2
+#define FLT_FABS__ fabs
+#define FLT_STRTO strtod
 
 #endif
 
@@ -60,16 +65,24 @@ extern "C" {
 #endif
 
 typedef FLT LinmathQuat[4]; // This is the [wxyz] quaternion, in wxyz format.
+typedef FLT LinmathPoint2d[2];
 typedef FLT LinmathPoint3d[3];
 typedef FLT LinmathVec3d[3];
+typedef FLT LinmathEulerAngle[3];
+typedef FLT LinmathAxisAngleMag[4];
+
+typedef struct LinmathEulerPose {
+	LinmathPoint3d Pos;
+	LinmathEulerAngle EulerRot;
+} LinmathEulerPose;
 
 typedef struct LinmathPose {
 	LinmathPoint3d Pos;
 	LinmathQuat Rot;
 } LinmathPose;
 
-extern LinmathQuat LinmathQuat_Identity;
-extern LinmathPose LinmathPose_Identity;
+LINMATH_EXPORT extern LinmathQuat LinmathQuat_Identity;
+LINMATH_EXPORT extern LinmathPose LinmathPose_Identity;
 
 // NOTE: Inputs may never be output with cross product.
 LINMATH_EXPORT void cross3d(FLT *out, const FLT *a, const FLT *b);
@@ -79,55 +92,119 @@ LINMATH_EXPORT void sub3d(FLT *out, const FLT *a, const FLT *b);
 LINMATH_EXPORT void add3d(FLT *out, const FLT *a, const FLT *b);
 
 LINMATH_EXPORT void scale3d(FLT *out, const FLT *a, FLT scalar);
+LINMATH_EXPORT void invert3d(FLT *out, const FLT *a);
 
+LINMATH_EXPORT FLT norm3d(const FLT *in);
 LINMATH_EXPORT void normalize3d(FLT *out, const FLT *in);
 
-FLT dot3d(const FLT *a, const FLT *b);
+LINMATH_EXPORT void linmath_interpolate(FLT *out, int n, const FLT *A, const FLT *B, FLT t);
+
+// out_pts needs to be preallocated with 3 * num_pts FLT's; it doesn't need to be zeroed.
+// out_mean can be null if you don't need the mean
+LINMATH_EXPORT void center3d(FLT *out_pts, FLT *out_mean, const FLT *pts, int num_pts);
+LINMATH_EXPORT void mean3d(LinmathVec3d out, const FLT *pts, int num_pts);
+
+LINMATH_EXPORT FLT dot3d(const FLT *a, const FLT *b);
 
 // Returns 0 if equal.  If either argument is null, 0 will ALWAYS be returned.
-int compare3d(const FLT *a, const FLT *b, FLT epsilon);
+LINMATH_EXPORT int compare3d(const FLT *a, const FLT *b, FLT epsilon);
 
 LINMATH_EXPORT void copy3d(FLT *out, const FLT *in);
 
-FLT magnitude3d(const FLT *a);
-FLT dist3d(const FLT *a, const FLT *b);
-FLT anglebetween3d(FLT *a, FLT *b);
+LINMATH_EXPORT FLT magnitude3d(const FLT *a);
+LINMATH_EXPORT FLT dist3d(const FLT *a, const FLT *b);
+LINMATH_EXPORT FLT anglebetween3d(FLT *a, FLT *b);
 
 LINMATH_EXPORT void rotatearoundaxis(FLT *outvec3, FLT *invec3, FLT *axis, FLT angle);
 LINMATH_EXPORT void angleaxisfrom2vect(FLT *angle, FLT *axis, FLT *src, FLT *dest);
 LINMATH_EXPORT void axisanglefromquat(FLT *angle, FLT *axis, LinmathQuat quat);
-
 // Quaternion things...
 
 typedef FLT LinmathEulerAngle[3];
 
+LINMATH_EXPORT FLT quatdist(const LinmathQuat q1, const LinmathQuat q2);
+LINMATH_EXPORT FLT quatdifference(const LinmathQuat q1, const LinmathQuat q2);
 LINMATH_EXPORT void quatset(LinmathQuat q, FLT w, FLT x, FLT y, FLT z);
+LINMATH_EXPORT bool quatiszero(const LinmathQuat q);
 LINMATH_EXPORT void quatsetnone(LinmathQuat q);
 LINMATH_EXPORT void quatcopy(LinmathQuat q, const LinmathQuat qin);
 LINMATH_EXPORT void quatfromeuler(LinmathQuat q, const LinmathEulerAngle euler);
 LINMATH_EXPORT void quattoeuler(LinmathEulerAngle euler, const LinmathQuat q);
 LINMATH_EXPORT void quatfromaxisangle(LinmathQuat q, const FLT *axis, FLT radians);
-FLT quatmagnitude(const LinmathQuat q);
-FLT quatinvsqmagnitude(const LinmathQuat q);
+LINMATH_EXPORT void quatfromaxisanglemag(LinmathQuat q, const LinmathAxisAngleMag axisangle);
+LINMATH_EXPORT void quattoaxisanglemag(LinmathAxisAngleMag ang, const LinmathQuat q);
+LINMATH_EXPORT FLT quatmagnitude(const LinmathQuat q);
+LINMATH_EXPORT FLT quatinvsqmagnitude(const LinmathQuat q);
 LINMATH_EXPORT void quatnormalize(LinmathQuat qout, const LinmathQuat qin); // Safe for in to be same as out.
 LINMATH_EXPORT void quattomatrix(FLT *matrix44, const LinmathQuat q);
 LINMATH_EXPORT void quattomatrix33(FLT *matrix33, const LinmathQuat qin);
 LINMATH_EXPORT void quatfrommatrix(LinmathQuat q, const FLT *matrix44);
 LINMATH_EXPORT void quatfrommatrix33(LinmathQuat q, const FLT *matrix33);
 LINMATH_EXPORT void quatgetconjugate(LinmathQuat qout, const LinmathQuat qin);
+
+/***
+ * Finds the nearest modulo 2*pi of a given axis angle representation that most neatly matches
+ * another axis angle vector.
+ *
+ * @param out Output vector
+ * @param inc Axis angle to find modulo answer for
+ * @param match Comparison axis angle meant to match up to. Pass in null to match [0, 0, 0].
+ */
+LINMATH_EXPORT void findnearestaxisanglemag(LinmathAxisAngleMag out, const LinmathAxisAngleMag inc,
+											const LinmathAxisAngleMag match);
+/***
+ * Performs conjugation operation wherein we find
+ *
+ * q = r * v * r^-1
+ *
+ * This operation is useful to find equivalent rotations between different reference frames.
+ * For instance, if 'v' is a particular rotation in frame A, and 'r' represents the translation
+ * from frame 'A' to 'B', q represents that same rotation in frame B
+ */
+LINMATH_EXPORT void quatconjugateby(LinmathQuat q, const LinmathQuat r, const LinmathQuat v);
 LINMATH_EXPORT void quatgetreciprocal(LinmathQuat qout, const LinmathQuat qin);
-LINMATH_EXPORT void quatsub(LinmathQuat qout, const LinmathQuat a, const LinmathQuat b);
-LINMATH_EXPORT void quatadd(LinmathQuat qout, const LinmathQuat a, const LinmathQuat b);
-LINMATH_EXPORT void quatrotateabout(LinmathQuat qout, const LinmathQuat a,
-									const LinmathQuat b); // same as quat multiply, not piecewise multiply.
+/***
+ * Find q such that q * q0 = q1; where q0, q1, q are unit quaternions
+ */
+LINMATH_EXPORT void quatfind(LinmathQuat q, const LinmathQuat q0, const LinmathQuat q1);
+/***
+ * Find q such that q0 * q1 = q; where q0, q1, q are unit quaternions
+ *
+ * same as quat multiply, not piecewise multiply.
+ */
+LINMATH_EXPORT void quatrotateabout(LinmathQuat q, const LinmathQuat q0, const LinmathQuat q1);
+
+/***
+ * Finds q = qv*t. If 'qv' is thought of an angular velocity, and t is the scalar time span of rotation, q is the
+ * arrived at rotation.
+ */
+LINMATH_EXPORT void quatmultiplyrotation(LinmathQuat q, const LinmathQuat qv, FLT t);
+
+/***
+ * Peicewise scaling
+ */
 LINMATH_EXPORT void quatscale(LinmathQuat qout, const LinmathQuat qin, FLT s);
-FLT quatinnerproduct(const LinmathQuat qa, const LinmathQuat qb);
+/***
+ * Peicewise division by scalar
+ */
+LINMATH_EXPORT void quatdivs(LinmathQuat qout, const LinmathQuat qin, FLT s);
+/***
+ * Peicewise subtraction
+ */
+LINMATH_EXPORT void quatsub(LinmathQuat qout, const LinmathQuat a, const LinmathQuat b);
+/***
+ * Peicewise addition
+ */
+LINMATH_EXPORT void quatadd(LinmathQuat qout, const LinmathQuat a, const LinmathQuat b);
+LINMATH_EXPORT FLT quatinnerproduct(const LinmathQuat qa, const LinmathQuat qb);
 LINMATH_EXPORT void quatouterproduct(FLT *outvec3, LinmathQuat qa, LinmathQuat qb);
 LINMATH_EXPORT void quatevenproduct(LinmathQuat q, LinmathQuat qa, LinmathQuat qb);
 LINMATH_EXPORT void quatoddproduct(FLT *outvec3, LinmathQuat qa, LinmathQuat qb);
 LINMATH_EXPORT void quatslerp(LinmathQuat q, const LinmathQuat qa, const LinmathQuat qb, FLT t);
 LINMATH_EXPORT void quatrotatevector(FLT *vec3out, const LinmathQuat quat, const FLT *vec3in);
+LINMATH_EXPORT void eulerrotatevector(FLT *vec3out, const LinmathEulerAngle quat, const FLT *vec3in);
 LINMATH_EXPORT void quatfrom2vectors(LinmathQuat q, const FLT *src, const FLT *dest);
+LINMATH_EXPORT void eulerfrom2vectors(LinmathEulerAngle q, const FLT *src, const FLT *dest);
 
 // This is the quat equivalent of 'pout = pose * pin' if pose were a 4x4 matrix in homogenous space
 LINMATH_EXPORT void ApplyPoseToPoint(LinmathPoint3d pout, const LinmathPose *pose, const LinmathPoint3d pin);
@@ -139,8 +216,22 @@ LINMATH_EXPORT void ApplyPoseToPose(LinmathPose *pout, const LinmathPose *lhs_po
 // Identity ( [0, 0, 0], [1, 0, 0, 0] )
 // by definition.
 LINMATH_EXPORT void InvertPose(LinmathPose *poseout, const LinmathPose *pose_in);
+static inline LinmathPose InvertPoseRtn(const LinmathPose *pose_in) {
+	LinmathPose rtn;
+	InvertPose(&rtn, pose_in);
+	return rtn;
+}
 
 LINMATH_EXPORT void PoseToMatrix(FLT *mat44, const LinmathPose *pose_in);
+
+// Given num_pts in coordinate system B, and in coordinate system A, find the optimal RHS rotation
+// which transforms from B to A.
+//
+// This assumes that the space A and B share an origin.
+LINMATH_EXPORT void KabschCentered(LinmathQuat B2Atx, const FLT *ptsA, const FLT *ptsB, int num_pts);
+
+// Same as above except it solves for the center for you
+LINMATH_EXPORT void Kabsch(LinmathPose *B2Atx, const FLT *ptsA, const FLT *ptsB, int num_pts);
 // Matrix Stuff
 
 typedef struct {
@@ -153,6 +244,34 @@ Matrix3x3 inverseM33(const Matrix3x3 mat);
 
 LINMATH_EXPORT void matrix44copy(FLT *mout, const FLT *minm);
 LINMATH_EXPORT void matrix44transpose(FLT *mout, const FLT *minm);
+
+static inline FLT linmath_enforce_range(FLT v, FLT mn, FLT mx) {
+	if (v < mn)
+		return mn;
+	if (v > mx)
+		return mx;
+	return v;
+}
+
+static inline FLT linmath_max(FLT x, FLT y) { return x > y ? x : y; }
+static inline int linmath_imax(int x, int y) { return x > y ? x : y; }
+
+static inline FLT linmath_min(FLT x, FLT y) { return x < y ? x : y; }
+static inline int linmath_imin(int x, int y) { return x < y ? x : y; }
+
+static inline LinmathEulerPose Pose2EulerPose(const LinmathPose *pose) {
+	LinmathEulerPose p;
+	copy3d(p.Pos, pose->Pos);
+	quattoeuler(p.EulerRot, pose->Rot);
+	return p;
+}
+
+static inline LinmathPose EulerPose2Pose(const LinmathEulerPose *pose) {
+	LinmathPose p;
+	copy3d(p.Pos, pose->Pos);
+	quatfromeuler(p.Rot, pose->EulerRot);
+	return p;
+}
 
 #ifdef __cplusplus
 }

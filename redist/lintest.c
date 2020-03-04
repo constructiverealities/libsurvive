@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <malloc.h>
 
 bool assertFLTEquals(FLT a, FLT b) { return fabs(a - b) < 0.0001; }
 
@@ -65,6 +66,14 @@ void testApplyPoseToPose() {
 		ApplyPoseToPose(&pose_out, &rotAroundYOffset, &pt);
 		ASSERT_FLTA_EQUALS(pose_out.Pos, expected.Pos, 7);
 	}
+
+	{
+	  pose_out = rotAroundYOffset;
+	  LinmathPose expected = {0, 2, 0, -1, 0, 0, 0};
+	  ApplyPoseToPose(&pose_out, &pose_out, &pose_out);
+	  ASSERT_FLTA_EQUALS(pose_out.Pos, expected.Pos, 7);
+	}
+
 }
 
 void testApplyPoseToPoint() {
@@ -102,11 +111,100 @@ void testApplyPoseToPoint() {
 	}
 }
 
+void testKabsch() {
+	FLT pts[] = {0, 0, 0, 100, 100, 100, 10, 0, 10, 50, 50, 0, 0, 0, 1000, -100, 0, 100};
+
+	LinmathPose tx = {.Pos = { 0 }, .Rot = {4, 3, 2, 1}};
+
+	LinmathPose tx2 = {.Pos = {1, 2, 3}, .Rot = {1, 2, 3, 4}};
+
+	quatnormalize(tx.Rot, tx.Rot);
+	quatnormalize(tx2.Rot, tx2.Rot);
+
+	const int N = sizeof(pts) / sizeof(FLT) / 3;
+#ifdef _WIN32
+	FLT *txPts = _alloca(N * 3 * sizeof(FLT));
+	FLT *txPts2 = _alloca(N * 3 * sizeof(FLT));
+#else
+	FLT txPts[N * 3];
+	FLT txPts2[N * 3];
+#endif
+	for (int i = 0; i < N; i++) {
+		ApplyPoseToPoint(txPts + i * 3, &tx, pts + i * 3);
+		ApplyPoseToPoint(txPts2 + i * 3, &tx2, pts + i * 3);
+	}
+
+	LinmathQuat should_be_tx = { 0 };
+	KabschCentered(should_be_tx, pts, txPts, N);
+	ASSERT_FLTA_EQUALS(should_be_tx, tx.Rot, 4);
+
+	LinmathPose should_be_tx2 = { 0 };
+	Kabsch(&should_be_tx2, pts, txPts2, N);
+	ASSERT_FLTA_EQUALS(should_be_tx2.Pos, tx2.Pos, 7);
+}
+
+static void testKabsch2() {
+	LinmathQuat q = {0};
+
+	LinmathPoint3d survivePts[] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+
+	LinmathPoint3d openvrPts[] = {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}};
+
+	KabschCentered(q, (double *)survivePts, (double *)openvrPts, 3);
+}
+
+static void testQuatFind(const LinmathQuat _q1, const LinmathQuat _q2) {
+	LinmathQuat q1;
+	quatnormalize(q1, _q1);
+	LinmathQuat q2;
+	quatnormalize(q2, _q2);
+
+	LinmathQuat q;
+	quatfind(q, q1, q2);
+	LinmathQuat tx_q2;
+	quatrotateabout(tx_q2, q, q1);
+
+	ASSERT_FLTA_EQUALS(tx_q2, q2, 4);
+}
+
+static void testQuatFinding() {
+	{ testQuatFind(LinmathQuat_Identity, LinmathQuat_Identity); }
+	{
+		LinmathQuat q2 = {0.7071068, 0, 0, 0.7071068};
+		testQuatFind(LinmathQuat_Identity, q2);
+	}
+	{
+		LinmathQuat q1 = {1., .3, .1, -.4};
+		LinmathQuat q2 = {.2, -.13, .1, -.4};
+		testQuatFind(q1, q2);
+	}
+}
+
+static void testQuatAsAngularVelocity() {
+	{
+		LinmathQuat q;
+		quatmultiplyrotation(q, LinmathQuat_Identity, 1);
+		ASSERT_FLTA_EQUALS(q, LinmathQuat_Identity, 4);
+	}
+
+	{
+		LinmathQuat q = {0.9998766, 0, 0, 0.0157073};
+		quatmultiplyrotation(q, q, 100);
+		LinmathQuat qz = {0, 0, 0, 1};
+		ASSERT_FLTA_EQUALS(q, qz, 4);
+	}
+}
+
 int main()
 {
 	testInvertPose();
 	testApplyPoseToPoint();
 	testApplyPoseToPose();
+	testKabsch();
+	testKabsch2();
+
+	testQuatFinding();
+	testQuatAsAngularVelocity();
 #if 1
 
 #define NONTRANSPOSED_DAVE

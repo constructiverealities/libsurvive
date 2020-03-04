@@ -1,3 +1,13 @@
+#pragma once
+
+#ifdef USE_OPENCV
+#include "opencv2/core/core_c.h"
+#include "opencv2/core/fast_math.hpp"
+#else // NOT USE_OPENCV
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "assert.h"
 #include "stdint.h"
 #include "stdlib.h"
@@ -113,26 +123,6 @@ typedef struct CvMat {
 
 } CvMat;
 
-/** Inline constructor. No data is allocated internally!!!
- * (Use together with cvCreateData, or use cvCreateMat instead to
- * get a matrix with allocated data):
- */
-static inline CvMat cvMat(int rows, int cols, int type, void *data) {
-	CvMat m;
-
-	assert((unsigned)CV_MAT_DEPTH(type) <= CV_64F);
-	type = CV_MAT_TYPE(type);
-	m.type = CV_MAT_MAGIC_VAL | CV_MAT_CONT_FLAG | type;
-	m.cols = cols;
-	m.rows = rows;
-	m.step = m.cols * CV_ELEM_SIZE(type);
-	m.data.ptr = (uchar *)data;
-	m.refcount = 0;
-	m.hdr_refcount = 0;
-
-	return m;
-}
-
 /*
 The function is a fast replacement for cvGetReal2D in the case of single-channel floating-point
 matrices. It is faster because it is inline, it does fewer checks for array type and array element
@@ -153,6 +143,31 @@ static inline double cvmGet(const CvMat *mat, int row, int col) {
 		assert(type == CV_64FC1);
 		return ((double *)(void *)(mat->data.ptr + (size_t)mat->step * row))[col];
 	}
+}
+
+/** Inline constructor. No data is allocated internally!!!
+ * (Use together with cvCreateData, or use cvCreateMat instead to
+ * get a matrix with allocated data):
+ */
+static inline CvMat cvMat(int rows, int cols, int type, void *data) {
+	CvMat m;
+
+	assert((unsigned)CV_MAT_DEPTH(type) <= CV_64F);
+	type = CV_MAT_TYPE(type);
+	m.type = CV_MAT_MAGIC_VAL | CV_MAT_CONT_FLAG | type;
+	m.cols = cols;
+	m.rows = rows;
+	m.step = m.cols * CV_ELEM_SIZE(type);
+	m.data.ptr = (uchar *)data;
+	m.refcount = 0;
+	m.hdr_refcount = 0;
+
+#if SURVIVE_ASAN_CHECKS
+	volatile double v = cvmGet(&m, rows - 1, cols - 1);
+	(void)v;
+#endif
+
+	return m;
 }
 
 /** @brief Sets a specific element of a single-channel floating-point matrix.
@@ -187,17 +202,30 @@ static inline void cvmSet(CvMat *mat, int row, int col, double value) {
 void print_mat(const CvMat *M);
 
 CvMat *cvCreateMat(int height, int width, int type);
+
 double cvInvert(const CvMat *srcarr, CvMat *dstarr, int method);
+
 void cvGEMM(const CvMat *src1, const CvMat *src2, double alpha, const CvMat *src3, double beta, CvMat *dst, int tABC);
+
 int cvSolve(const CvMat *Aarr, const CvMat *Barr, CvMat *xarr, int method);
+
 void cvSetZero(CvMat *arr);
-void cvCopyTo(const CvMat *src, CvMat *dest);
+
+void cvCopy(const CvMat *src, CvMat *dest, const CvMat *mask);
+
 CvMat *cvCloneMat(const CvMat *mat);
+
 void cvReleaseMat(CvMat **mat);
+
 void cvSVD(CvMat *aarr, CvMat *warr, CvMat *uarr, CvMat *varr, int flags);
+
 void cvMulTransposed(const CvMat *src, CvMat *dst, int order, const CvMat *delta, double scale);
+
 void cvTranspose(const CvMat *M, CvMat *dst);
+
 void print_mat(const CvMat *M);
+
+double cvDet(const CvMat *M);
 
 #define CV_SVD 1
 #define CV_SVD_MODIFY_A 1
@@ -207,6 +235,11 @@ void print_mat(const CvMat *M);
 extern const int DECOMP_SVD;
 extern const int DECOMP_LU;
 
-#define GEMM_1_T 1
-#define GEMM_2_T 2
-#define GEMM_3_T 4
+#define CV_GEMM_A_T 1
+#define CV_GEMM_B_T 2
+#define CV_GEMM_C_T 4
+
+#ifdef __cplusplus
+}
+#endif
+#endif // NOT USE_OPENCV

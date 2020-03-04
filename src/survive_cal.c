@@ -27,11 +27,16 @@
 int mkdir(const char *);
 #endif
 
+
+STATIC_CONFIG_ITEM( REQ_TRACK_FOR_CAL, "requiredtrackersforcal", 's', "Which devices will be used, i.e. HMD,WM0,WM1", "" );
+STATIC_CONFIG_ITEM( ALLOW_TRACK_FOR_CAL, "allowalltrackersforcal", 'i', "Allow use of additional connected devices for calibration", 0 );
+STATIC_CONFIG_ITEM(OOTX_IGNORE_SYNC_ERROR, "ootx-ignore-sync-error", 'i', "Ignore sync errors on ootx packets", 0);
+
 #define PTS_BEFORE_COMMON 32
 #define NEEDED_COMMON_POINTS 10
 #define MIN_SENSORS_VISIBLE_PER_LH_FOR_CAL 4
 
-#define NEEDED_TIMES_OF_COMMON 5
+#define NEEDED_TIMES_OF_COMMON 3
 #define DRPTS_NEEDED_FOR_AVG ((int)(DRPTS*3/4))
 
 
@@ -44,6 +49,13 @@ int mkdir(const char *);
 
 static void handle_calibration( struct SurviveCalData *cd );
 static void reset_calibration( struct SurviveCalData * cd );
+
+void ootx_error_clbk_d(ootx_decoder_context *ct, const char *msg) {
+	SurviveContext *ctx = (SurviveContext *)(ct->user);
+	SurviveCalData *cd = ctx->calptr;
+	int id = ct->user1;
+	SV_INFO("(%s %d) %s", cd->poseobjects[0]->codename, id, msg);
+}
 
 void ootx_packet_clbk_d(ootx_decoder_context *ct, ootx_packet* packet)
 {
@@ -62,16 +74,16 @@ void ootx_packet_clbk_d(ootx_decoder_context *ct, ootx_packet* packet)
 	//print_lighthouse_info_v6(&v6);
 
 	b->BaseStationID = v6.id;
-	b->fcal.phase[0] = v6.fcal_0_phase;
-	b->fcal.phase[1] = v6.fcal_1_phase;
-	b->fcal.tilt[0] = (v6.fcal_0_tilt);
-	b->fcal.tilt[1] = (v6.fcal_1_tilt); // XXX??? Is this right? See https://github.com/cnlohr/libsurvive/issues/18
-	b->fcal.curve[0] = v6.fcal_0_curve;
-	b->fcal.curve[1] = v6.fcal_1_curve;
-	b->fcal.gibpha[0] = v6.fcal_0_gibphase;
-	b->fcal.gibpha[1] = v6.fcal_1_gibphase;
-	b->fcal.gibmag[0] = v6.fcal_0_gibmag;
-	b->fcal.gibmag[1] = v6.fcal_1_gibmag;
+	b->fcal[0].phase = v6.fcal_0_phase;
+	b->fcal[1].phase = v6.fcal_1_phase;
+	b->fcal[0].tilt = tan(v6.fcal_0_tilt);
+	b->fcal[1].tilt = tan(v6.fcal_1_tilt); // XXX??? Is this right? See https://github.com/cnlohr/libsurvive/issues/18
+	b->fcal[0].curve = v6.fcal_0_curve;
+	b->fcal[1].curve = v6.fcal_1_curve;
+	b->fcal[0].gibpha = v6.fcal_0_gibphase;
+	b->fcal[1].gibpha = v6.fcal_1_gibphase;
+	b->fcal[0].gibmag = v6.fcal_0_gibmag;
+	b->fcal[1].gibmag = v6.fcal_1_gibmag;
 	b->accel[0] = v6.accel_dir_x;
 	b->accel[1] = v6.accel_dir_y;
 	b->accel[2] = v6.accel_dir_z;
@@ -122,18 +134,20 @@ void survive_cal_install( struct SurviveContext * ctx )
 		return;
 
 	int i;
-	struct SurviveCalData * cd = ctx->calptr = calloc( 1, sizeof( struct SurviveCalData ) );
+	struct SurviveCalData *cd = ctx->calptr = SV_CALLOC(1, sizeof(struct SurviveCalData));
 
 	if( ctx->state != SURVIVE_RUNNING )
 	{
-		SV_ERROR( "Error: You cannot install a calibrator until the system is running." );
+		SV_GENERAL_ERROR("Error: You cannot install a calibrator until the system is running.");
 	}
 
-	for( i = 0; i < NUM_LIGHTHOUSES; i++ )
-	{
+	for (i = 0; i < NUM_GEN1_LIGHTHOUSES; i++) {
 		ootx_init_decoder_context(&cd->ootx_decoders[i]);
+		cd->ootx_decoders[i].ignore_sync_bit_error = survive_configi(ctx, "ootx-ignore-sync-error", SC_SETCONFIG, 0);
 		cd->ootx_decoders[i].user = ctx;
 		cd->ootx_decoders[i].user1 = i;
+		cd->ootx_decoders[i].ootx_packet_clbk = ootx_packet_clbk_d;
+		cd->ootx_decoders[i].ootx_error_clbk = ootx_error_clbk_d;
 	}
 
 	cd->stage = 1;
@@ -141,11 +155,29 @@ void survive_cal_install( struct SurviveContext * ctx )
 
 	cd->numPoseObjects = 0;
 
+	char RequiredTrackersForCal[128] = { 0 };
 	// setting the required trackers for calibration to be permissive to make it easier for a newbie to start-- 
-	// basically, libsurvive will detect whatever they have plugged in and start using that.  
-//	const char * RequiredTrackersForCal = config_read_str(ctx->global_config_values, "RequiredTrackersForCal", "HMD,WM0,WM1");
-	const char *RequiredTrackersForCal = survive_configs(ctx, "requiredtrackersforcal", SC_SETCONFIG, "");
-	const uint32_t AllowAllTrackersForCal = survive_configi(ctx, "allowalltrackersforcal", SC_SETCONFIG, 1);
+	// basically, libsurvive will detect whatever they have plugged in and start using that.
+	const char *_RequiredTrackersForCal = survive_configs(ctx, "requiredtrackersforcal", SC_SETCONFIG, "");
+	strncpy(RequiredTrackersForCal, _RequiredTrackersForCal, sizeof(RequiredTrackersForCal) - 1);
+
+	if (strlen(RequiredTrackersForCal) == 0) {
+		int8_t highest_sensor_ct = 0;
+		int best_obj = 0;
+		for (int j = 0; j < ctx->objs_ct; j++) {
+			if (highest_sensor_ct < ctx->objs[j]->sensor_ct) {
+				highest_sensor_ct = ctx->objs[j]->sensor_ct;
+				best_obj = j;
+			}
+		}
+
+		strncpy(RequiredTrackersForCal, ctx->objs[best_obj]->codename, sizeof(RequiredTrackersForCal) - 1);
+	}
+
+	// If there are no mandatory trackers for calibration; by default just accept whatever it is that the person has.
+	const uint32_t AllowAllTrackersForCal =
+		survive_configi(ctx, "allowalltrackersforcal", SC_SETCONFIG, 0) || (strlen(RequiredTrackersForCal) == 0);
+
 	size_t requiredTrackersFound = 0;
 
 	for (int j=0; j < ctx->objs_ct; j++)
@@ -163,16 +195,15 @@ void survive_cal_install( struct SurviveContext * ctx )
 		{
 			if (MAX_DEVICES_TO_CAL > cd->numPoseObjects)
 			{
-				cd->poseobjects[j] = ctx->objs[j];
+				cd->poseobjects[cd->numPoseObjects] = ctx->objs[j];
+				SV_INFO("Calibration is using %s", cd->poseobjects[cd->numPoseObjects]->codename);
 				cd->numPoseObjects++;
-
-				SV_INFO("Calibration is using %s", cd->poseobjects[j]->codename);
 			}
 			else
 			{
 				SV_INFO("Calibration is NOT using %s; device count exceeds MAX_DEVICES_TO_CAL", ctx->objs[j]->codename);
 			}
-		}
+		}	
 
 	}
 
@@ -182,15 +213,11 @@ void survive_cal_install( struct SurviveContext * ctx )
 	{
 		if (requiredTrackersFound != ((strlen(RequiredTrackersForCal) + 1) / 4))
 		{
-			SV_ERROR( "Error: Did not find all devices required for calibration." );
+			SV_GENERAL_ERROR("Error: Did not find all devices required for calibration.");
 			free( cd );
 			return;
 		}
 	}
-
-	cd->ConfigPoserFn = GetDriverByConfig(ctx, "Poser", "configposer", "SBA", 0);
-
-	ootx_packet_clbk = ootx_packet_clbk_d;
 
 	ctx->calptr = cd;
 }
@@ -212,21 +239,35 @@ void survive_cal_light( struct SurviveObject * so, int sensor_id, int acode, int
 
 	case 1:
 		//Collecting OOTX data.
-		if( sensor_id < 0 )
-		{
-				//fprintf(stderr, "%s\n", so->codename);
-			int lhid = -sensor_id-1;
+		if (sensor_id < 0 && sensor_id != -3) {
+			// fprintf(stderr, "%s\n", so->codename);
+			int lhid = lh;
 			// Take the OOTX data from the first device.  (if using HMD, WM0, WM1 only, this will be HMD)
 
-			if( lhid < NUM_LIGHTHOUSES && so == cd->poseobjects[0]  ) 
-			{
-				uint8_t dbit = (acode & 2)>>1;
-				ootx_pump_bit( &cd->ootx_decoders[lhid], dbit );
+			if (lhid < NUM_GEN1_LIGHTHOUSES && so == cd->poseobjects[0]) {
+				if (!ctx->bsd[lhid].OOTXSet) {
+					uint8_t dbit = (acode & 2) >> 1;
+					ootx_pump_bit(&cd->ootx_decoders[lhid], dbit);
+				}
+				cd->seen_lh[lhid] = true;
 			}
 			int i;
-			for( i = 0; i < ctx->activeLighthouses; i++ )
-				if( ctx->bsd[i].OOTXSet == 0 ) break;
-			if( i == ctx->activeLighthouses ) cd->stage = 2;  //TODO: Make this configuratble to allow single lighthouse.
+			for (i = 0; i < ctx->activeLighthouses; i++) {
+				if (ctx->bsd[i].OOTXSet == 0)
+					break;
+			}
+
+			if (cd->stage_cnt > 500 && cd->seen_lh[1] == false && ctx->activeLighthouses > 1) {
+				ctx->activeLighthouses = 1;
+				survive_configi(ctx, "lighthousecount", SC_SETCONFIG | SC_OVERRIDE, 1);
+
+				SV_WARN("Only one lighthouse detected");
+			}
+
+			if (i == ctx->activeLighthouses)
+				cd->stage = 2;
+
+			cd->stage_cnt++;
 		}
 		break;
 	case 3: //Look for light sync lengths.
@@ -259,13 +300,13 @@ void survive_cal_angle( struct SurviveObject * so, int sensor_id, int acode, uin
 
 	if( !cd ) return;
 
-	int sensid = sensor_id;
+	int sensid = -1;
 
 	for (int i=0; i < cd->numPoseObjects; i++)
 	{
 		if( strcmp( so->codename, cd->poseobjects[i]->codename ) == 0 )
 		{
-			sensid += i*32;
+			sensid = sensor_id + i * 32;
 		}
 	}
 
@@ -292,23 +333,6 @@ void survive_cal_angle( struct SurviveObject * so, int sensor_id, int acode, uin
 		{
 			cd->peak_counts = ct;
 		}
-
-
-		//Determine if there is a sensor on a watchman visible from both lighthouses.
-/*		if( sensid >= 32 )
-		{
-			int k;
-			int ok = 1;
-			for( k = 0; k < NUM_LIGHTHOUSES; k++ )
-			{
-				if( cd->all_counts[sensid][k][0] < NEEDED_COMMON_POINTS || cd->all_counts[sensid][k][1] < NEEDED_COMMON_POINTS )
-				{
-					ok = 0;
-					break;
-				}
-			}
-			if( ok ) cd->found_common = 1;
-		}*/
 
 		if( cd->peak_counts >= PTS_BEFORE_COMMON )
 		{
@@ -390,22 +414,26 @@ static void reset_calibration( struct SurviveCalData * cd )
 	cd->times_found_common = 0;
 	cd->stage = 2;
 
-	memset( cd->all_sync_counts, 0, sizeof( cd->all_sync_counts ) );
+	for (int i = 0; i < NUM_GEN1_LIGHTHOUSES; i++) {
+		ootx_free_decoder_context(&cd->ootx_decoders[i]);
+	}
+
+	memset(cd->all_sync_counts, 0, sizeof(cd->all_sync_counts));
 }
 
 static void handle_calibration( struct SurviveCalData *cd )
 {
 	struct SurviveContext * ctx = cd->ctx;
 
-	#define MAX_CAL_PT_DAT (MAX_SENSORS_TO_CAL*NUM_LIGHTHOUSES*2)
+#define MAX_CAL_PT_DAT (MAX_SENSORS_TO_CAL * NUM_GEN1_LIGHTHOUSES * 2)
 
-/*
-	FLT avgsweeps[MAX_CAL_PT_DAT];
-	FLT avglens[MAX_CAL_PT_DAT];
-	FLT stdsweeps[MAX_CAL_PT_DAT];
-	FLT stdlens[MAX_CAL_PT_DAT];
-	int ctsweeps[MAX_CAL_PT_DAT];
-*/
+	/*
+		FLT avgsweeps[MAX_CAL_PT_DAT];
+		FLT avglens[MAX_CAL_PT_DAT];
+		FLT stdsweeps[MAX_CAL_PT_DAT];
+		FLT stdlens[MAX_CAL_PT_DAT];
+		int ctsweeps[MAX_CAL_PT_DAT];
+	*/
 
 	memset( cd->ctsweeps, 0, sizeof( cd->ctsweeps ) );
 
@@ -417,35 +445,32 @@ static void handle_calibration( struct SurviveCalData *cd )
 	mkdir( "calinfo", 0755 );
 #endif
 	int sen, axis, lh;
-	FLT temp_syncs[SENSORS_PER_OBJECT][NUM_LIGHTHOUSES];
 
 	//Just to get it out of the way early, we'll calculate the sync-pulse-lengths here.
 	FILE * sync_time_info = fopen( "calinfo/synctime.csv", "w" );
 
 	for( sen = 0; sen < MAX_SENSORS_TO_CAL; sen++ )
-	for( lh = 0; lh < NUM_LIGHTHOUSES; lh++ )
-	{
-		int count = cd->all_sync_counts[sen][lh];
-		int i;
-		double totaltime;
+		for (lh = 0; lh < NUM_GEN1_LIGHTHOUSES; lh++) {
+			int count = cd->all_sync_counts[sen][lh];
+			int i;
+			double totaltime;
 
-		totaltime = 0;
+			totaltime = 0;
 
-		if( count < 20 ) continue;
-		for( i = 0; i < count; i++ )
-		{
-			totaltime += cd->all_sync_times[sen][lh][i];
-		}
-		FLT avg = totaltime/count;
+			if (count < 20)
+				continue;
+			for (i = 0; i < count; i++) {
+				totaltime += cd->all_sync_times[sen][lh][i];
+			}
+			FLT avg = totaltime / count;
 
-		double stddev = 0.0;
-		for( i = 0; i < count; i++ )
-		{
-			stddev += (cd->all_sync_times[sen][lh][i] - avg)*(cd->all_sync_times[sen][lh][i] - avg);
-		}
-		stddev /= count;
+			double stddev = 0.0;
+			for (i = 0; i < count; i++) {
+				stddev += (cd->all_sync_times[sen][lh][i] - avg) * (cd->all_sync_times[sen][lh][i] - avg);
+			}
+			stddev /= count;
 
-		fprintf( sync_time_info, "%d %d %f %d %f\n", sen, lh, totaltime/count, count, stddev );
+			fprintf(sync_time_info, "%d %d %f %d %f\n", sen, lh, totaltime / count, count, stddev);
 	}
 
 	fclose( sync_time_info );
@@ -456,28 +481,27 @@ static void handle_calibration( struct SurviveCalData *cd )
 	FILE * hists = fopen( "calinfo/histograms.csv", "w" );
 	FILE * ptinfo = fopen( "calinfo/ptinfo.csv", "w" );
 	for( sen = 0; sen < MAX_SENSORS_TO_CAL; sen++ )
-	for( lh = 0; lh < NUM_LIGHTHOUSES; lh++ )
-	for( axis = 0; axis < 2; axis++ )
-	{
-		int dpmax = cd->all_counts[sen][lh][axis];
-		if( dpmax < MIN_PTS_BEFORE_CAL ) continue;
-		int i;
+		for (lh = 0; lh < NUM_GEN1_LIGHTHOUSES; lh++)
+			for (axis = 0; axis < 2; axis++) {
+				int dpmax = cd->all_counts[sen][lh][axis];
+				if (dpmax < MIN_PTS_BEFORE_CAL)
+					continue;
+				int i;
 
-		FLT sumsweepangle = 0;
-		FLT sumlentime = 0;
+				FLT sumsweepangle = 0;
+				FLT sumlentime = 0;
 
-		//Find initial guess at average
-		for( i = 0; i < dpmax; i++ )
-		{
-			FLT sweepangle = cd->all_angles[sen][lh][axis][i];
-			FLT datalen = cd->all_lengths[sen][lh][axis][i];
-			sumsweepangle += sweepangle;
-			sumlentime += datalen;
-		}
+				// Find initial guess at average
+				for (i = 0; i < dpmax; i++) {
+					FLT sweepangle = cd->all_angles[sen][lh][axis][i];
+					FLT datalen = cd->all_lengths[sen][lh][axis][i];
+					sumsweepangle += sweepangle;
+					sumlentime += datalen;
+				}
 
 		#define OUTLIER_ANGLE   0.001	//TODO: Tune
 		#define OUTLIER_LENGTH	0.001	//TODO: Tune
-		#define ANGLE_STDEV_TOO_HIGH 0.000001 //TODO: Tune
+#define ANGLE_STDEV_TOO_HIGH 0.001		// TODO: Tune
 
 		FLT avgsweep = sumsweepangle / dpmax;
 		FLT avglen = sumlentime / dpmax;
@@ -511,7 +535,7 @@ static void handle_calibration( struct SurviveCalData *cd )
 
 		if( count < DRPTS_NEEDED_FOR_AVG )
 		{
-			printf( "DPAVG %d\n", count );
+			SV_INFO("DPAVG %d", count);
 			//Not enough for this point to be considered.
 			continue;
 		}
@@ -580,7 +604,7 @@ static void handle_calibration( struct SurviveCalData *cd )
 
 		fprintf( ptinfo, "%d %d %d %d %f %f %f %f %f %f\n", sen, lh, axis, count, avgsweep, avglen*1000000, stddevang*1000000000, stddevlen*1000000000, max_outlier_length*1000000000, max_outlier_angle*1000000000 );
 
-		int dataindex = sen*(2*NUM_LIGHTHOUSES)+lh*2+axis;
+		int dataindex = sen * (2 * NUM_GEN1_LIGHTHOUSES) + lh * 2 + axis;
 		cd->avgsweeps[dataindex] = avgsweep;
 		cd->avglens[dataindex] = avglen;
 		cd->stdsweeps[dataindex] = stddevang;
@@ -593,7 +617,7 @@ static void handle_calibration( struct SurviveCalData *cd )
 	int obj;
 
 	//Poses of lighthouses relative to objects.
-	SurvivePose  objphl[MAX_POSE_OBJECTS][NUM_LIGHTHOUSES];
+	SurvivePose objphl[MAX_POSE_OBJECTS][NUM_GEN1_LIGHTHOUSES];
 
 	FILE * fobjp = fopen( "calinfo/objposes.csv", "w" );
 
@@ -602,28 +626,31 @@ static void handle_calibration( struct SurviveCalData *cd )
 		int i, j;
 		PoserDataFullScene fsd = {0};
 		fsd.hdr.pt = POSERDATA_FULL_SCENE;
-		for( j = 0; j < NUM_LIGHTHOUSES; j++ )
-		for( i = 0; i < SENSORS_PER_OBJECT; i++ )
-		{
-			int gotdata = 0;
+		for (j = 0; j < NUM_GEN1_LIGHTHOUSES; j++)
+			for (i = 0; i < SENSORS_PER_OBJECT; i++) {
+				int gotdata = 0;
 
-			int dataindex = (i+obj*32)*(2*NUM_LIGHTHOUSES)+j*2+0;
+				int dataindex = (i + obj * 32) * (2 * NUM_GEN1_LIGHTHOUSES) + j * 2 + 0;
 
-			if( cd->ctsweeps[dataindex+0] < DRPTS_NEEDED_FOR_AVG ||
-				cd->ctsweeps[dataindex+1] < DRPTS_NEEDED_FOR_AVG )
-			{
-				fsd.lengths[i][j][0] = -1;
-				fsd.lengths[i][j][1] = -1;
-				continue;
+				if (cd->ctsweeps[dataindex + 0] < DRPTS_NEEDED_FOR_AVG ||
+					cd->ctsweeps[dataindex + 1] < DRPTS_NEEDED_FOR_AVG) {
+					fsd.lengths[i][j][0] = -1;
+					fsd.lengths[i][j][1] = -1;
+					fsd.angles[i][j][0] = NAN;
+					fsd.angles[i][j][1] = NAN;
+					continue;
+				}
+				fsd.lengths[i][j][0] = cd->avglens[dataindex + 0];
+				fsd.lengths[i][j][1] = cd->avglens[dataindex + 1];
+				fsd.angles[i][j][0] = cd->avgsweeps[dataindex + 0];
+				fsd.angles[i][j][1] = cd->avgsweeps[dataindex + 1];
 			}
-			fsd.lengths[i][j][0] = cd->avglens[dataindex+0];
-			fsd.lengths[i][j][1] = cd->avglens[dataindex+1];
-			fsd.angles[i][j][0] = cd->avgsweeps[dataindex + 0];
-			fsd.angles[i][j][1] = cd->avgsweeps[dataindex + 1];
-			fsd.synctimes[i][j] = temp_syncs[i][j];
+
+		int r = -1;
+		if (cd->poseobjects[obj]->PoserFn) {
+			r = cd->poseobjects[obj]->PoserFn(cd->poseobjects[obj], (PoserData *)&fsd);
 		}
 
-		int r = cd->ConfigPoserFn( cd->poseobjects[obj], (PoserData*)&fsd );
 		if( r )
 		{
 			SV_INFO( "Failed calibration on dev %d\n", obj );
@@ -637,8 +664,7 @@ static void handle_calibration( struct SurviveCalData *cd )
 			ctx->global_config_values, "ComputeReprojectError", 0);
 
 		int lh;
-		for( lh = 0; lh < NUM_LIGHTHOUSES; lh++ )
-		{
+		for (lh = 0; lh < NUM_GEN1_LIGHTHOUSES; lh++) {
 			SurvivePose * objfromlh = &cd->poseobjects[obj]->FromLHPose[lh];  //The pose is here
 			SurvivePose * lhp = &ctx->bsd[lh].Pose; //Need to somehow put pose here.
 

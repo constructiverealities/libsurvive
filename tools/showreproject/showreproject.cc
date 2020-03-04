@@ -20,7 +20,7 @@ cv::Mat_<cv::Vec3b> err[2];
 
 cv::Vec3f flow2rgb(float x, float y, float scale = 1) {
 	cv::Mat_<cv::Vec3f> hsv(1, 1);
-	hsv(0, 0) = {atan2(y, x) * 180. / M_PI, 1.0, std::min(1.0f, sqrt(x * x + y * y) * scale)};
+	hsv(0, 0) = {(float)(atan2(y, x) * 180. / M_PI), 1.0, std::min(1.0f, sqrt(x * x + y * y) * scale)};
 	cv::Mat_<cv::Vec3f> bgr(1, 1);
 	cv::cvtColor(hsv, bgr, CV_HSV2RGB_FULL);
 	return bgr(0, 0) * 255;
@@ -88,14 +88,13 @@ static void redraw(SurviveContext *ctx) {
 
 					auto l = scene->lengths[sensor][lh];
 					double r = std::max(3., (l[0] + l[1]) / 1000.);
-					// std::cerr << lh << "\t" << sensor << "\t" << ((l[0] + l[1]) / 2000.) << "\t" << l[0] << "\t" <<
-					// l[1] << std::endl;
+
 					if (region.data)
 						cv::circle(region, map(a), r, ncolor);
 
 					FLT point3d[3];
 					FLT out[2];
-					ApplyPoseToPoint(point3d, &so->OutPose, so->sensor_locations + 3 * sensor);
+					ApplyPoseToPoint(point3d, &so->OutPoseIMU, so->sensor_locations + 3 * sensor);
 					survive_reproject(ctx, lh, point3d, out);
 
 					double ex = out[0] - a[0];
@@ -150,6 +149,8 @@ void lighthouse_process(SurviveContext *ctx, uint8_t lighthouse, SurvivePose *po
 
 SurviveContext *create(int argc, char **argv) {
 	auto ctx = survive_init(argc, argv);
+	if (ctx == nullptr)
+		return nullptr;
 
 	survive_install_pose_fn(ctx, raw_pose_process);
 	survive_install_lighthouse_pose_fn(ctx, lighthouse_process);
@@ -165,7 +166,6 @@ void drawbsds(SurviveContext *ctx) {
 		SVCal_All, SVCal_Phase, SVCal_Gib, SVCal_Curve, SVCal_Tilt,
 	};
 
-	for (auto f : show_flags) {
 		for (int lh = 0; lh < 2; lh++) {
 			cv::Mat_<cv::Vec3b> img = cv::Mat_<cv::Vec3b>(SIZE, SIZE);
 			img.setTo(cv::Vec3b(0, 0, 0));
@@ -176,15 +176,11 @@ void drawbsds(SurviveContext *ctx) {
 						continue;
 
 					FLT out[2];
-					auto config = survive_calibration_config_ctor();
-					config.use_flag = f;
-					survive_apply_bsd_calibration_by_config(ctx, lh, &config, in, out);
+					survive_apply_bsd_calibration(ctx, lh, in, out);
 					double ex = out[0] - in[0];
 					double ey = out[1] - in[1];
-					if (f == SVCal_All) {
-						ex -= ctx->bsd[lh].fcal.phase[0];
-						ey -= ctx->bsd[lh].fcal.phase[1];
-					}
+					ex -= ctx->bsd[lh].fcal[0].phase;
+					ey -= ctx->bsd[lh].fcal[1].phase;
 
 					// Make it opposite of angles
 					ex *= -1;
@@ -194,11 +190,9 @@ void drawbsds(SurviveContext *ctx) {
 				}
 			}
 			draw_viz(img);
-			cv::imwrite("BSD" + std::to_string(lh) + "_" + std::to_string(f) + ".png", img);
-			if (f == SVCal_All)
-				cv::imshow("BSD" + std::to_string(lh), img);
+			cv::imwrite("BSD" + std::to_string(lh) + ".png", img);
+			cv::imshow("BSD" + std::to_string(lh), img);
 		}
-	}
 }
 
 int main(int argc, char **argv) {
@@ -210,6 +204,8 @@ int main(int argc, char **argv) {
 	//        continue;
 
 	auto ctx1 = create(argc, argv);
+	if (ctx1 == nullptr)
+		return -1;
 	size_t cidx = survive_configi(ctx1, "default-cal-conf", SC_GET, 0);
 	size_t idx = survive_configi(ctx1, "default-cal-conf2", SC_GET, 0);
 

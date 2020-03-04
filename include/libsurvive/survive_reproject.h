@@ -5,24 +5,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/**
+ * The conventions for reprojection in libsurvive:
+ *
+ * - Lighthouses are oriented sorta unintuitively -- If you have a lighthouse sitting on where the tripod mount is, in
+ * front of it -- where it is projecting light -- is -Z. To it's right is +X. Up is +Y.
+ * - So for instance -- an object to the right and lower than a lighthouse would have a ptInLh of { 1, -1, -1 }
+ * - Physically, lighthouses sweep from their right to left, and from up to down.
+ * - All angle measurements are in range of -PI / 2 to PI / 2. To the right / bottom of the lighthouse is -PI/2.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void survive_reproject(const SurviveContext *ctx, int lighthouse, FLT *point3d, FLT *out);
+typedef FLT SurviveAngleReading[2];
 
-void survive_reproject_from_pose(const SurviveContext *ctx, int lighthouse, const SurvivePose *pose, FLT *point3d,
-								 FLT *out);
-void survive_reproject_from_pose_with_config(const SurviveContext *ctx, struct survive_calibration_config *config,
-											 int lighthouse, const SurvivePose *pose, FLT *point3d, FLT *out);
+typedef FLT (*survive_reproject_axis_fn_t)(const BaseStationCal *, const SurviveAngleReading);
+typedef void (*survive_reproject_axis_jacob_fn_t)(SurviveAngleReading, const SurvivePose *, const LinmathPoint3d,
+												  const SurvivePose *, const BaseStationCal *);
+typedef void (*survive_reproject_xy_fn_t)(const BaseStationCal *bcal, LinmathVec3d const ptInLh,
+										  SurviveAngleReading out);
+typedef void (*survive_reproject_full_jac_obj_pose_fn_t)(SurviveAngleReading out, const SurvivePose *obj2world,
+														 const LinmathVec3d ptInObj, const SurvivePose *world2lh,
+														 const BaseStationCal *bcal);
 
-void survive_reproject_full_jac_obj_pose(FLT *out, const SurvivePose *obj_pose, const LinmathVec3d obj_pt,
-										 const SurvivePose *lh2world, const BaseStationData *bsd,
-										 const survive_calibration_config *config);
+typedef struct survive_reproject_model_t {
+	survive_reproject_axis_fn_t reprojectAxisFn[2];
+	survive_reproject_axis_jacob_fn_t reprojectAxisJacobFn[2];
+	survive_reproject_xy_fn_t reprojectXY;
+	survive_reproject_full_jac_obj_pose_fn_t reprojectFullJacObjPose;
+} survive_reproject_model_t;
 
-void survive_reproject_full(FLT *out, const SurvivePose *obj_pose, const LinmathVec3d obj_pt,
-							const SurvivePose *lh2world, const BaseStationData *bsd,
-							const survive_calibration_config *config);
+SURVIVE_IMPORT extern const survive_reproject_model_t survive_reproject_model;
+
+SURVIVE_EXPORT FLT survive_reproject_axis_x(const BaseStationCal *bcal, LinmathVec3d const ptInLh);
+SURVIVE_EXPORT FLT survive_reproject_axis_y(const BaseStationCal *bcal, LinmathVec3d const ptInLh);
+
+SURVIVE_EXPORT void survive_reproject_xy(const BaseStationCal *bcal, LinmathVec3d const ptInLh, SurviveAngleReading out);
+SURVIVE_EXPORT void survive_reproject_from_pose(const SurviveContext *ctx, int lighthouse, const SurvivePose *world2lh,
+								 LinmathVec3d const ptInWorld, SurviveAngleReading out);
+
+SURVIVE_EXPORT void survive_reproject_full_jac_obj_pose(SurviveAngleReading out, const SurvivePose *obj2world,
+										 const LinmathVec3d ptInObj, const SurvivePose *world2lh,
+										 const BaseStationCal *bcal);
+
+SURVIVE_EXPORT void survive_reproject_full_x_jac_obj_pose(SurviveAngleReading out, const SurvivePose *obj2world,
+										   const LinmathVec3d ptInObj, const SurvivePose *world2lh,
+										   const BaseStationCal *bcal);
+
+SURVIVE_EXPORT void survive_reproject_full_y_jac_obj_pose(SurviveAngleReading out, const SurvivePose *obj2world,
+										   const LinmathVec3d ptInObj, const SurvivePose *world2lh,
+										   const BaseStationCal *bcal);
+
+SURVIVE_EXPORT void survive_reproject_full(const BaseStationCal *bcal, const SurvivePose *world2lh, const SurvivePose *obj2world,
+							const LinmathVec3d ptInObj, SurviveAngleReading out);
 
 // This is given a lighthouse -- in the same system as stored in BaseStationData, and
 // a 3d point and finds what the effective 'angle' value for a given lighthouse system
@@ -32,19 +69,19 @@ void survive_reproject_full(FLT *out, const SurvivePose *obj_pose, const Linmath
 // position from a 2D coordinate, this is helpful since the minimization of reprojection
 // error is a core mechanism to many types of solvers.
 
-void survive_reproject_from_pose_with_bsd(const BaseStationData *bsd, const survive_calibration_config *config,
-										  const SurvivePose *pose, const FLT *point3d, FLT *out);
+SURVIVE_EXPORT void survive_reproject_from_pose_with_bcal(const BaseStationCal *bcal, const SurvivePose *world2lh,
+										   LinmathVec3d const ptInLh, SurviveAngleReading out);
+
+SURVIVE_EXPORT void survive_reproject(const SurviveContext *ctx, int lighthouse, LinmathVec3d const ptInWorld,
+					   SurviveAngleReading out);
 
 // This is given input from the light sensors and approximates the idealized version of them
 // by incorporating the calibration data from the lighthouse. In theory, it's an approximation
 // but in practice in converges pretty quickly and to a good degree of accuracy.
 // That said, all things being equal, it is better to compare reprojection to raw incoming
 // data if you are looking to minimize that error.
-void survive_apply_bsd_calibration(SurviveContext *ctx, int lh, const FLT *in, FLT *out);
-
-// Same as above, but lets you specify the configuration. Used internally and also in some tools
-void survive_apply_bsd_calibration_by_config(SurviveContext *ctx, int lh, struct survive_calibration_config *config,
-											 const FLT *in, FLT *out);
+SURVIVE_EXPORT void survive_apply_bsd_calibration(const SurviveContext *ctx, int lh, const SurviveAngleReading in,
+								   SurviveAngleReading out);
 
 #ifdef __cplusplus
 }

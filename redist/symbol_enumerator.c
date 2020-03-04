@@ -4,63 +4,9 @@
 #if defined( WIN32 ) || defined( WINDOWS ) || defined( USE_WINDOWS ) || defined( _WIN32 )
 
 #include <windows.h>
+#include <dbghelp.h>
 
-typedef struct _SYMBOL_INFO {
-  ULONG   SizeOfStruct;
-  ULONG   TypeIndex;
-  ULONG64 Reserved[2];
-  ULONG   Index;
-  ULONG   Size;
-  ULONG64 ModBase;
-  ULONG   Flags;
-  ULONG64 Value;
-  ULONG64 Address;
-  ULONG   Register;
-  ULONG   Scope;
-  ULONG   Tag;
-  ULONG   NameLen;
-  ULONG   MaxNameLen;
-  TCHAR   Name[1];
-} SYMBOL_INFO, *PSYMBOL_INFO;
-typedef struct _IMAGEHLP_STACK_FRAME {
-  ULONG64 InstructionOffset;
-  ULONG64 ReturnOffset;
-  ULONG64 FrameOffset;
-  ULONG64 StackOffset;
-  ULONG64 BackingStoreOffset;
-  ULONG64 FuncTableEntry;
-  ULONG64 Params[4];
-  ULONG64 Reserved[5];
-  BOOL    Virtual;
-  ULONG   Reserved2;
-} IMAGEHLP_STACK_FRAME, *PIMAGEHLP_STACK_FRAME;
-
-
-typedef BOOL (*PSYM_ENUMERATESYMBOLS_CALLBACK)(
-  PSYMBOL_INFO pSymInfo,
-  ULONG        SymbolSize,
-  PVOID        UserContext
-  );
-  
-BOOL WINAPI SymEnumSymbols(
-  HANDLE                         hProcess,
-  ULONG64                        BaseOfDll,
-  PCTSTR                         Mask,
-  PSYM_ENUMERATESYMBOLS_CALLBACK EnumSymbolsCallback,
-  const PVOID                          UserContext
-);
-
-BOOL WINAPI SymInitialize(
-	HANDLE hProcess,
-	PCTSTR UserSearchPath,
-	BOOL   fInvadeProcess
-);
-
-BOOL WINAPI SymCleanup(
-	HANDLE hProcess
-);
-
-BOOL mycb(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID UserContext) {
+BOOL CALLBACK mycb(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID UserContext) {
 	SymEnumeratorCallback cb = (SymEnumeratorCallback)UserContext;
 	return !cb("", &pSymInfo->Name[0], (void *)pSymInfo->Address, (long)pSymInfo->Size);
   }
@@ -79,8 +25,7 @@ int EnumerateSymbols( SymEnumeratorCallback cb )
 	return 0;
 }
 
-#else
-	
+#elif __linux__
 
 #include <stdio.h>
 #include <dlfcn.h>
@@ -97,22 +42,22 @@ int EnumerateSymbols( SymEnumeratorCallback cb )
 
 #define UINTS_PER_WORD (__WORDSIZE / (CHAR_BIT * sizeof (unsigned int)))
 
-
-    struct dl_phdr_info {
-        ElfW(Addr)        dlpi_addr;  /* Base address of object */
-        const char       *dlpi_name;  /* (Null-terminated) name of
-                                         object */
-        const ElfW(Phdr) *dlpi_phdr;  /* Pointer to array of
-                                         ELF program headers
-                                         for this object */
-        ElfW(Half)        dlpi_phnum; /* # of items in dlpi_phdr */
+#ifndef _GNU_SOURCE
+struct dl_phdr_info {
+	ElfW(Addr) dlpi_addr;		  /* Base address of object */
+	const char *dlpi_name;		  /* (Null-terminated) name of
+									 object */
+	const ElfW(Phdr) * dlpi_phdr; /* Pointer to array of
+									 ELF program headers
+									 for this object */
+	ElfW(Half) dlpi_phnum;		  /* # of items in dlpi_phdr */
     };
 
 
 
 void dl_iterate_phdr( void*, void*);
 
-
+#endif
 static ElfW(Word) gnu_hashtab_symbol_count(const unsigned int *const table)
 {
     const unsigned int *const bucket = table + 4 + table[2] * (unsigned int)(UINTS_PER_WORD);
@@ -126,10 +71,9 @@ static ElfW(Word) gnu_hashtab_symbol_count(const unsigned int *const table)
     return (ElfW(Word))max;
 }
 
-static static void *dynamic_pointer(const ElfW(Addr) addr,
-                             const ElfW(Addr) base, const ElfW(Phdr) *const header, const ElfW(Half) headers)
-{
-    if (addr) {
+static void *dynamic_pointer(const ElfW(Addr) addr, const ElfW(Addr) base, const ElfW(Phdr) *const header,
+							 const ElfW(Half) headers) {
+	if (addr) {
         ElfW(Half) h;
 
         for (h = 0; h < headers; h++)
@@ -234,9 +178,7 @@ static int callback(struct dl_phdr_info *info,
 int EnumerateSymbols( SymEnumeratorCallback cb )
 {
 	dl_iterate_phdr( callback, cb );
+	return 0;
 }
-
-
-
 
 #endif

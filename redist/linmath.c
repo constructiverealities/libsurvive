@@ -1,9 +1,18 @@
 // Copyright 2013,2016 <>< C. N. Lohr.  This file licensed under the terms of the MIT license.
-
+#if defined(_WIN32) && !defined(TCC)
+#define LINMATH_EXPORT __declspec(dllexport)
+#endif
 #include "linmath.h"
 #include <float.h>
 #include <math.h>
+#include <stdbool.h>
 #include <string.h>
+
+#include "minimal_opencv.h"
+
+#ifndef M_PI
+# define M_PI           3.14159265358979323846  /* pi */
+#endif
 
 inline void cross3d(FLT *out, const FLT *a, const FLT *b) {
 	out[0] = a[1] * b[2] - a[2] * b[1];
@@ -23,20 +32,32 @@ inline void add3d(FLT *out, const FLT *a, const FLT *b) {
 	out[2] = a[2] + b[2];
 }
 
+inline void invert3d(FLT *out, const FLT *a) {
+	out[0] = 1. / a[0];
+	out[1] = 1. / a[1];
+	out[2] = 1. / a[2];
+}
 inline void scale3d(FLT *out, const FLT *a, FLT scalar) {
 	out[0] = a[0] * scalar;
 	out[1] = a[1] * scalar;
 	out[2] = a[2] * scalar;
 }
 
+LINMATH_EXPORT FLT norm3d(const FLT *in) { return FLT_SQRT(in[0] * in[0] + in[1] * in[1] + in[2] * in[2]); }
 inline void normalize3d(FLT *out, const FLT *in) {
-	FLT r = ((FLT)1.) / FLT_SQRT(in[0] * in[0] + in[1] * in[1] + in[2] * in[2]);
+	FLT r = ((FLT)1.) / norm3d(in);
 	out[0] = in[0] * r;
 	out[1] = in[1] * r;
 	out[2] = in[2] * r;
 }
 
-FLT dot3d(const FLT *a, const FLT *b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+void linmath_interpolate(FLT *out, int n, const FLT *A, const FLT *B, FLT t) {
+	for (int i = 0; i < n; i++) {
+		out[i] = A[i] + (B[i] - A[i]) * t;
+	}
+}
+
+LINMATH_EXPORT FLT dot3d(const FLT *a, const FLT *b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
 int compare3d(const FLT *a, const FLT *b, FLT epsilon) {
 	if (!a || !b)
@@ -62,7 +83,7 @@ inline void copy3d(FLT *out, const FLT *in) {
 	out[2] = in[2];
 }
 
-FLT magnitude3d(const FLT *a) { return FLT_SQRT(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); }
+LINMATH_EXPORT FLT magnitude3d(const FLT *a) { return FLT_SQRT(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); }
 FLT dist3d(const FLT *a, const FLT *b) {
 	LinmathPoint3d tmp;
 	sub3d(tmp, a, b);
@@ -80,6 +101,35 @@ FLT anglebetween3d(FLT *a, FLT *b) {
 	if (dot > 0.9999999)
 		return 0;
 	return FLT_ACOS(dot);
+}
+
+LINMATH_EXPORT void center3d(FLT *out_pts, FLT *out_mean, const FLT *pts, int num_pts) {
+	FLT center[3];
+	if (out_mean == 0)
+		out_mean = center;
+	mean3d(out_mean, pts, num_pts);
+
+	for (int i = 0; i < num_pts; i++) {
+		for (int j = 0; j < 3; j++) {
+			out_pts[i * 3 + j] = pts[i * 3 + j] - out_mean[j];
+		}
+	}
+}
+
+LINMATH_EXPORT void mean3d(LinmathVec3d out, const FLT *pts, int num_pts) {
+	for (int i = 0; i < 3; i++) {
+		out[i] = 0;
+	}
+
+	for (int i = 0; i < num_pts; i++) {
+		for (int j = 0; j < 3; j++) {
+			out[j] += pts[i * 3 + j];
+		}
+	}
+
+	for (int j = 0; j < 3; j++) {
+		out[j] = out[j] / (FLT)num_pts;
+	}
 }
 
 // algorithm found here: http://inside.mines.edu/fs_home/gmurray/ArbitraryAxisRotation/
@@ -173,6 +223,21 @@ inline void axisanglefromquat(FLT *angle, FLT *axis, FLT *q) {
 // Originally from Mercury (Copyright (C) 2009 by Joshua Allen, Charles Lohr, Adam Lowman)
 // Under the mit/X11 license.
 
+inline FLT quatdifference(const LinmathQuat q1, const LinmathQuat q2) {
+	LinmathQuat diff;
+	quatfind(diff, q1, q2);
+	return 1. - diff[0];
+}
+FLT quatdist(const FLT *q1, const FLT *q2) {
+	FLT rtn = 0;
+	for (int i = 0; i < 4; i++) {
+		rtn += q1[i] * q2[i];
+	}
+	rtn = linmath_max(1., linmath_min(-1, rtn));
+	return 2 * acos(FLT_FABS(rtn));
+}
+
+inline bool quatiszero(const LinmathQuat q) { return q[0] == 0 && q[1] == 0 && q[2] == 0 && q[3] == 0; }
 inline void quatset(LinmathQuat q, FLT w, FLT x, FLT y, FLT z) {
 	q[0] = w;
 	q[1] = x;
@@ -222,6 +287,20 @@ inline void quattoeuler(LinmathEulerAngle euler, const LinmathQuat q) {
 	euler[2] = FLT_ATAN2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]));
 }
 
+inline void quatfromaxisanglemag(LinmathQuat q, const LinmathAxisAngleMag axisangle) {
+	FLT radians = norm3d(axisangle);
+
+	if (radians == 0.0) {
+		quatcopy(q, LinmathQuat_Identity);
+	} else {
+		FLT sn = FLT_SIN(radians / 2.0f);
+		q[0] = FLT_COS(radians / 2.0f);
+		q[1] = sn * axisangle[0] / radians;
+		q[2] = sn * axisangle[1] / radians;
+		q[3] = sn * axisangle[2] / radians;
+		quatnormalize(q, q);
+	}
+}
 inline void quatfromaxisangle(LinmathQuat q, const FLT *axis, FLT radians) {
 	FLT v[3];
 	normalize3d(v, axis);
@@ -235,24 +314,24 @@ inline void quatfromaxisangle(LinmathQuat q, const FLT *axis, FLT radians) {
 	quatnormalize(q, q);
 }
 
-FLT quatmagnitude(const LinmathQuat q) {
+inline FLT quatmagnitude(const LinmathQuat q) {
 	return FLT_SQRT((q[0] * q[0]) + (q[1] * q[1]) + (q[2] * q[2]) + (q[3] * q[3]));
 }
 
-FLT quatinvsqmagnitude(const LinmathQuat q) {
+inline FLT quatinvsqmagnitude(const LinmathQuat q) {
 	return ((FLT)1.) / FLT_SQRT((q[0] * q[0]) + (q[1] * q[1]) + (q[2] * q[2]) + (q[3] * q[3]));
 }
 
 inline void quatnormalize(LinmathQuat qout, const LinmathQuat qin) {
-	FLT imag = quatinvsqmagnitude(qin);
-	quatscale(qout, qin, imag);
+	FLT norm = quatmagnitude(qin);
+	quatdivs(qout, qin, norm);
 }
 
 inline void quattomatrix(FLT *matrix44, const LinmathQuat qin) {
 	FLT q[4];
 	quatnormalize(q, qin);
 
-	// Reduced calulation for speed
+	// Reduced calculation for speed
 	FLT xx = 2 * q[1] * q[1];
 	FLT xy = 2 * q[1] * q[2];
 	FLT xz = 2 * q[1] * q[3];
@@ -286,7 +365,6 @@ inline void quattomatrix(FLT *matrix44, const LinmathQuat qin) {
 	matrix44[14] = 0;
 	matrix44[15] = 1;
 }
-
 inline void quatfrommatrix33(FLT *q, const FLT *m) {
 	FLT m00 = m[0], m01 = m[1], m02 = m[2], m10 = m[3], m11 = m[4], m12 = m[5], m20 = m[6], m21 = m[7], m22 = m[8];
 
@@ -395,6 +473,13 @@ inline void quatgetreciprocal(LinmathQuat qout, const LinmathQuat qin) {
 	quatscale(qout, qout, m);
 }
 
+inline void quatconjugateby(LinmathQuat q, const LinmathQuat r, const LinmathQuat v) {
+	LinmathQuat ir;
+	quatgetconjugate(ir, r);
+	quatrotateabout(q, ir, v);
+	quatrotateabout(q, q, r);
+	quatnormalize(q, q);
+}
 inline void quatsub(LinmathQuat qout, const FLT *a, const FLT *b) {
 	qout[0] = a[0] - b[0];
 	qout[1] = a[1] - b[1];
@@ -409,12 +494,57 @@ inline void quatadd(LinmathQuat qout, const FLT *a, const FLT *b) {
 	qout[3] = a[3] + b[3];
 }
 
+inline void quatfind(LinmathQuat q, const LinmathQuat q0, const LinmathQuat q1) {
+	LinmathQuat iq0;
+	quatgetconjugate(iq0, q0);
+	quatrotateabout(q, q1, iq0);
+}
+
 inline void quatrotateabout(LinmathQuat qout, const LinmathQuat q1, const LinmathQuat q2) {
 	// NOTE: Does not normalize
-	qout[0] = (q1[0] * q2[0]) - (q1[1] * q2[1]) - (q1[2] * q2[2]) - (q1[3] * q2[3]);
-	qout[1] = (q1[0] * q2[1]) + (q1[1] * q2[0]) + (q1[2] * q2[3]) - (q1[3] * q2[2]);
-	qout[2] = (q1[0] * q2[2]) - (q1[1] * q2[3]) + (q1[2] * q2[0]) + (q1[3] * q2[1]);
-	qout[3] = (q1[0] * q2[3]) + (q1[1] * q2[2]) - (q1[2] * q2[1]) + (q1[3] * q2[0]);
+	LinmathQuat rtn;
+	FLT *p = qout;
+	bool aliased = q1 == qout || q2 == qout;
+	if (aliased) {
+		p = rtn;
+	}
+
+	p[0] = (q1[0] * q2[0]) - (q1[1] * q2[1]) - (q1[2] * q2[2]) - (q1[3] * q2[3]);
+	p[1] = (q1[0] * q2[1]) + (q1[1] * q2[0]) + (q1[2] * q2[3]) - (q1[3] * q2[2]);
+	p[2] = (q1[0] * q2[2]) - (q1[1] * q2[3]) + (q1[2] * q2[0]) + (q1[3] * q2[1]);
+	p[3] = (q1[0] * q2[3]) + (q1[1] * q2[2]) - (q1[2] * q2[1]) + (q1[3] * q2[0]);
+
+	if (aliased) {
+		quatcopy(qout, rtn);
+	}
+}
+
+inline void findnearestaxisanglemag(LinmathAxisAngleMag out, const LinmathAxisAngleMag inc,
+									const LinmathAxisAngleMag match) {
+	FLT norm_match = match ? norm3d(match) : 0;
+	FLT norm_inc = norm3d(inc);
+	FLT new_norm_inc = norm_inc;
+
+	while (new_norm_inc > norm_match + M_PI) {
+		new_norm_inc -= 2 * M_PI;
+	}
+	while (new_norm_inc + M_PI < norm_match) {
+		new_norm_inc += 2 * M_PI;
+	}
+	scale3d(out, inc, new_norm_inc / norm_inc);
+}
+
+inline void quattoaxisanglemag(LinmathAxisAngleMag ang, const LinmathQuat q) {
+	FLT axis_len = sqrt(q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+	FLT angle = 2. * atan2(axis_len, q[0]);
+	scale3d(ang, q + 1, axis_len == 0 ? 0 : angle / axis_len);
+}
+
+inline void quatmultiplyrotation(LinmathQuat q, const LinmathQuat qv, FLT t) {
+	LinmathAxisAngleMag aa;
+	quattoaxisanglemag(aa, qv);
+	scale3d(aa, aa, t);
+	quatfromaxisanglemag(q, aa);
 }
 
 inline void quatscale(LinmathQuat qout, const LinmathQuat qin, FLT s) {
@@ -422,6 +552,13 @@ inline void quatscale(LinmathQuat qout, const LinmathQuat qin, FLT s) {
 	qout[1] = qin[1] * s;
 	qout[2] = qin[2] * s;
 	qout[3] = qin[3] * s;
+}
+
+inline void quatdivs(LinmathQuat qout, const LinmathQuat qin, FLT s) {
+	qout[0] = qin[0] / s;
+	qout[1] = qin[1] / s;
+	qout[2] = qin[2] / s;
+	qout[3] = qin[3] / s;
 }
 
 FLT quatinnerproduct(const LinmathQuat qa, const LinmathQuat qb) {
@@ -452,33 +589,63 @@ inline void quatslerp(LinmathQuat q, const LinmathQuat qa, const LinmathQuat qb,
 	FLT bn[4];
 	quatnormalize(an, qa);
 	quatnormalize(bn, qb);
-	FLT cosTheta = quatinnerproduct(an, bn);
-	FLT sinTheta;
 
-	// Careful: If cosTheta is exactly one, or even if it's infinitesimally over, it'll
-	// cause SQRT to produce not a number, and screw everything up.
-	if (1 - (cosTheta * cosTheta) <= 0)
-		sinTheta = 0;
-	else
-		sinTheta = FLT_SQRT(1 - (cosTheta * cosTheta));
+	// Switched implementation to match https://en.wikipedia.org/wiki/Slerp
 
-	FLT Theta = FLT_ACOS(cosTheta); // Theta is half the angle between the 2 MQuaternions
+	// Compute the cosine of the angle between the two vectors.
+	double dot = dot3d(qa, qb);
 
-	if (FLT_FABS(Theta) < DEFAULT_EPSILON)
-		quatcopy(q, qa);
-	else if (FLT_FABS(sinTheta) < DEFAULT_EPSILON) {
-		quatadd(q, qa, qb);
-		quatscale(q, q, 0.5);
-	} else {
-		FLT aside[4];
-		FLT bside[4];
-		quatscale(bside, qb, FLT_SIN(t * Theta));
-		quatscale(aside, qa, FLT_SIN((1 - t) * Theta));
-		quatadd(q, aside, bside);
-		quatscale(q, q, ((FLT)1.) / sinTheta);
+	LinmathQuat nqb;
+
+	// If the dot product is negative, slerp won't take
+	// the shorter path. Note that v1 and -v1 are equivalent when
+	// the negation is applied to all four components. Fix by 
+	// reversing one quaternion.
+	if (dot < 0.0f) {
+		quatscale( nqb, qb, -1 );
+		dot = -dot;
 	}
+	else
+	{
+		quatscale( nqb, qb, 1 );
+	}
+
+	const double DOT_THRESHOLD = 0.9995;
+	if (dot > DOT_THRESHOLD) {
+		// If the inputs are too close for comfort, linearly interpolate
+		// and normalize the result.
+
+		//Quaternion result = v0 + t*(v1 - v0);
+		LinmathQuat tmp;
+		quatsub( tmp, nqb, qa );
+		quatscale( tmp, tmp, t );
+		quatadd( q, qa, tmp );
+		quatnormalize( q, q );
+		return;
+	}
+
+	// Since dot is in range [0, DOT_THRESHOLD], acos is safe
+	double theta_0 = FLT_ACOS(dot);        // theta_0 = angle between input vectors
+	double theta = theta_0*t;              // theta = angle between v0 and result
+	double sin_theta = FLT_SIN(theta);     // compute this value only once
+	double sin_theta_0 = FLT_SIN(theta_0); // compute this value only once
+
+	double s0 = cos( theta ) - dot * sin_theta / sin_theta_0;  // == sin(theta_0 - theta) / sin(theta_0)
+	double s1 = sin_theta / sin_theta_0;
+
+	LinmathQuat aside;
+	LinmathQuat bside;
+	quatscale(bside, nqb, s1 );
+	quatscale(aside, qa, s0 );
+	quatadd(q, aside, bside);
+	quatnormalize(q, q);
 }
 
+inline void eulerrotatevector(FLT *vec3out, const LinmathEulerAngle eulerAngle, const FLT *vec3in) {
+	LinmathQuat q;
+	quatfromeuler(q, eulerAngle);
+	quatrotatevector(vec3out, q, vec3in);
+}
 inline void quatrotatevector(FLT *vec3out, const LinmathQuat quat, const FLT *vec3in) {
 	// See: http://www.geeks3d.com/20141201/how-to-rotate-a-vertex-by-a-quaternion-in-glsl/
 
@@ -536,6 +703,11 @@ inline void rotate_vec(FLT *out, const FLT *in, Matrix3x3 rot) {
 // under MIT license
 // http://www.ogre3d.org/docs/api/1.9/_ogre_vector3_8h_source.html
 
+inline void eulerfrom2vectors(LinmathEulerAngle euler, const FLT *src, const FLT *dest) {
+	LinmathQuat q;
+	quatfrom2vectors(q, src, dest);
+	quattoeuler(euler, q);
+}
 /** Gets the shortest arc quaternion to rotate this vector to the destination
 vector.
 @remarks
@@ -612,13 +784,18 @@ inline void matrix44transpose(FLT *mout, const FLT *minm) {
 }
 
 inline void ApplyPoseToPoint(LinmathPoint3d pout, const LinmathPose *pose, const LinmathPoint3d pin) {
-	quatrotatevector(pout, pose->Rot, pin);
-	add3d(pout, pout, pose->Pos);
+	LinmathPoint3d tmp;
+	quatrotatevector(tmp, pose->Rot, pin);
+	add3d(pout, tmp, pose->Pos);
+	for (int i = 0; i < 3; i++)
+		assert(!isnan(pout[i]));
 }
 
 inline void ApplyPoseToPose(LinmathPose *pout, const LinmathPose *lhs_pose, const LinmathPose *rhs_pose) {
 	ApplyPoseToPoint(pout->Pos, lhs_pose, rhs_pose->Pos);
 	quatrotateabout(pout->Rot, lhs_pose->Rot, rhs_pose->Rot);
+	for (int i = 0; i < 3; i++)
+		assert(!isnan(pout->Pos[i]));
 }
 
 inline void InvertPose(LinmathPose *poseout, const LinmathPose *pose) {
@@ -641,5 +818,63 @@ inline void PoseToMatrix(FLT *matrix44, const LinmathPose *pose_in) {
 	matrix44[11] = pose_in->Pos[2];
 }
 
-LinmathQuat LinmathQuat_Identity = {1.0};
-LinmathPose LinmathPose_Identity = {.Rot = {1.0}};
+void KabschCentered(LinmathQuat qout, const FLT *ptsA, const FLT *ptsB, int num_pts) {
+	// Note: The following follows along with https://en.wikipedia.org/wiki/Kabsch_algorithm
+	// for the most part but we use some transpose identities to let avoid unneeded transposes
+	CvMat A = cvMat(num_pts, 3, CV_64F, (FLT *)ptsA);
+	CvMat B = cvMat(num_pts, 3, CV_64F, (FLT *)ptsB);
+
+	double _C[9] = {0};
+	CvMat C = cvMat(3, 3, CV_64F, _C);
+	cvGEMM(&B, &A, 1, 0, 0, &C, CV_GEMM_A_T);
+
+	double _U[9] = {0};
+	double _W[9] = {0};
+	double _VT[9] = {0};
+	CvMat U = cvMat(3, 3, CV_64F, _U);
+	CvMat W = cvMat(3, 3, CV_64F, _W);
+	CvMat VT = cvMat(3, 3, CV_64F, _VT);
+
+	cvSVD(&C, &W, &U, &VT, CV_SVD_V_T | CV_SVD_MODIFY_A);
+
+	double _R[9] = {0};
+	CvMat R = cvMat(3, 3, CV_64F, _R);
+	cvGEMM(&U, &VT, 1, 0, 0, &R, 0);
+
+	// Enforce RH rule
+	if (cvDet(&R) < 0.) {
+		_U[2] *= -1;
+		_U[5] *= -1;
+		_U[8] *= -1;
+		cvGEMM(&U, &VT, 1, 0, 0, &R, 0);
+	}
+
+	quatfrommatrix33(qout, _R);
+}
+
+LINMATH_EXPORT void Kabsch(LinmathPose *B2Atx, const FLT *_ptsA, const FLT *_ptsB, int num_pts) {
+	FLT centerA[3];
+	FLT centerB[3];
+
+#ifndef _WIN32
+	FLT ptsA[num_pts * 3];
+	FLT ptsB[num_pts * 3];
+#else
+	FLT *ptsA = malloc(num_pts * 3 * sizeof(FLT));
+	FLT *ptsB = malloc(num_pts * 3 * sizeof(FLT));
+#endif
+	center3d(ptsA, centerA, _ptsA, num_pts);
+	center3d(ptsB, centerB, _ptsB, num_pts);
+
+	KabschCentered(B2Atx->Rot, ptsA, ptsB, num_pts);
+	quatrotatevector(centerA, B2Atx->Rot, centerA);
+	sub3d(B2Atx->Pos, centerB, centerA);
+
+#ifdef _WIN32
+	free(ptsA);
+	free(ptsB);
+#endif
+}
+
+LINMATH_EXPORT LinmathQuat LinmathQuat_Identity = {1.0};
+LINMATH_EXPORT LinmathPose LinmathPose_Identity = {.Rot = {1.0}};

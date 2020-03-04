@@ -12,7 +12,11 @@
   <body>
     <div id="ThreeJS" style="z-index: 1; position: absolute; left:0px; top:0px"></div>
     <div id="cam-control" style="z-index: 2;border:1px solid white;position:absolute">
-      <input type="checkbox" id="trails">Trails</input><br/>
+      <input type="checkbox" id="trails" checked>Trails</input><br/>
+      <input type="checkbox" id="fpv">FPV</input><br/>
+      <input type="checkbox" id="model" checked>Model</input><br/>
+      <input type="checkbox" id="imu" checked>IMU</input><br/>
+
       <button id="toggleBtn">
         Toggle 2D View
       </button>
@@ -31,5 +35,14 @@
     z-index: 3;">
 
     </div>
+    <input type="range" id="time" style="
+    right: 20px;
+    width: 50%;
+    margin: 0px;
+    position: absolute;
+    bottom: 20px;
+    margin-left: -500px;
+    z-index: 3;"
+           min="0" max="100" value="100" step="any" />
   </body>
 </html>

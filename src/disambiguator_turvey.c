@@ -51,10 +51,10 @@ typedef struct {
 	int activeSweepStartTime;
 	int activeAcode;
 
-	//	int lh_pulse_len[NUM_LIGHTHOUSES];
-	int lh_start_time[NUM_LIGHTHOUSES];
-	int lh_max_pulse_length[NUM_LIGHTHOUSES];
-	int8_t lh_acode[NUM_LIGHTHOUSES];
+	//	int lh_pulse_len[NUM_GEN1_LIGHTHOUSES];
+	int lh_start_time[NUM_GEN1_LIGHTHOUSES];
+	int lh_max_pulse_length[NUM_GEN1_LIGHTHOUSES];
+	int8_t lh_acode[NUM_GEN1_LIGHTHOUSES];
 	int current_lh; // used knowing which sync pulse we're looking at.
 
 } lightcap2_per_sweep_data;
@@ -155,8 +155,8 @@ static uint8_t remove_outliers(SurviveObject *so) {
 
 	//	uint8_t removed_outliers = 0;
 
-	uint32_t d1 = abs(*min - mean);
-	uint32_t d2 = abs(*max - mean);
+	uint32_t d1 = mean - *min;
+	uint32_t d2 = *max - mean;
 
 	if (d1 > d2) {
 		if (d1 > tau_test) {
@@ -199,6 +199,7 @@ static void handle_lightcap2_process_sweep_data(SurviveObject *so) {
 	{
 		unsigned int longest_pulse = 0;
 		unsigned int timestamp_of_longest_pulse = 0;
+		(void)timestamp_of_longest_pulse;
 		for (int i = 0; i < SENSORS_PER_OBJECT; i++) {
 			if (lcd->sweep.sweep_len[i] > longest_pulse) {
 				longest_pulse = lcd->sweep.sweep_len[i];
@@ -216,6 +217,7 @@ static void handle_lightcap2_process_sweep_data(SurviveObject *so) {
 
 			{
 				static int counts[SENSORS_PER_OBJECT][2] = {0};
+				(void)counts;
 
 				//				if (lcd->per_sweep.activeLighthouse == 0 && !allZero)
 				if (lcd->per_sweep.activeLighthouse > -1 && !allZero) {
@@ -366,7 +368,7 @@ static void handle_lightcap2_sync(SurviveObject *so, LightcapElement *le) {
 		memset(&lcd->per_sweep, 0, sizeof(lcd->per_sweep));
 		lcd->per_sweep.activeLighthouse = -1;
 
-		for (uint8_t i = 0; i < NUM_LIGHTHOUSES; ++i) {
+		for (uint8_t i = 0; i < NUM_GEN1_LIGHTHOUSES; ++i) {
 			lcd->per_sweep.lh_acode[i] = -1;
 		}
 
@@ -412,7 +414,7 @@ static void handle_lightcap2_sweep(SurviveObject *so, LightcapElement *le) {
 	lcd->per_sweep.activeSweepStartTime = 0;
 	lcd->per_sweep.activeAcode = 0;
 
-	for (uint8_t i = 0; i < NUM_LIGHTHOUSES; ++i) {
+	for (uint8_t i = 0; i < NUM_GEN1_LIGHTHOUSES; ++i) {
 		int acode = lcd->per_sweep.lh_acode[i];
 		if ((acode >= 0) && !(acode >> 2 & 1)) {
 			lcd->per_sweep.activeLighthouse = i;
@@ -439,7 +441,7 @@ void DisambiguatorTurvey(SurviveObject *so, LightcapElement *le) {
 
 	if (so->disambiguator_data == NULL) {
 		fprintf(stderr, "Initializing Disambiguator Data\n");
-		so->disambiguator_data = malloc(sizeof(lightcap2_data));
+		so->disambiguator_data = SV_MALLOC(sizeof(lightcap2_data));
 		memset(so->disambiguator_data, 0, sizeof(lightcap2_data));
 	}
 

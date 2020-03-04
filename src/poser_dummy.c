@@ -12,15 +12,18 @@ int PoserDummy( SurviveObject * so, PoserData * pd )
 {
 	PoserType pt = pd->pt;
 	SurviveContext * ctx = so->ctx;
-	DummyData * dd = so->PoserData;
+	DummyData *dd = so->PoserFnData;
 
-	if( !dd ) so->PoserData = dd = malloc( sizeof( DummyData ) );
+	if (!dd)
+		so->PoserFnData = dd = SV_MALLOC(sizeof(DummyData));
 
 	switch( pt )
 	{
 	case POSERDATA_IMU:
 	{
 		PoserDataIMU * imu = (PoserDataIMU*)pd;
+		SurvivePose pose = LinmathPose_Identity;
+		PoserData_poser_pose_func(pd, so, &pose);
 		//printf( "IMU:%s (%f %f %f) (%f %f %f)\n", so->codename, imu->accel[0], imu->accel[1], imu->accel[2], imu->gyro[0], imu->gyro[1], imu->gyro[2] );
 		break;
 	}
@@ -39,7 +42,7 @@ int PoserDummy( SurviveObject * so, PoserData * pd )
 	case POSERDATA_DISASSOCIATE:
 	{
 		free( dd );
-		so->PoserData = 0;
+		so->PoserFnData = 0;
 		//printf( "Need to disassociate.\n" );
 		break;
 	}

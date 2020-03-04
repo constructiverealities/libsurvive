@@ -57,7 +57,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v140</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
@@ -109,9 +109,10 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DiagnosticsFormat>Caret</DiagnosticsFormat>
+      <AdditionalOptions>/Y- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -121,6 +122,7 @@
       <MapExports>true</MapExports>
       <ModuleDefinitionFile>
       </ModuleDefinitionFile>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <ProjectReference />
     <Lib>
@@ -134,7 +136,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -143,6 +145,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>true</MapExports>
       <MapFileName>libsurvive.map</MapFileName>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
     </Link>
     <ProjectReference />
   </ItemDefinitionGroup>
@@ -154,7 +157,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -176,7 +179,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -198,7 +201,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -220,7 +223,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;MANUAL_REGISTRATION;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>FLT=double;USE_DOUBLE;RUNTIME_SYMNUM;NOZLIB;_CRT_SECURE_NO_WARNINGS;HIDAPI;WINDOWS;_DEBUG;_LIB;HAVE_LAPACK_CONFIG_H;LAPACK_COMPLEX_STRUCTURE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..\winbuild;..\..\include\libsurvive;..\..\redist;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -260,15 +263,17 @@
     <ClCompile Include="..\..\src\poser_daveortho.c" />
     <ClCompile Include="..\..\src\poser_dummy.c" />
     <ClCompile Include="..\..\src\poser_epnp.c" />
+    <ClCompile Include="..\..\src\survive_optimizer.c" />
     <ClCompile Include="..\..\src\poser_general_optimizer.c" />
     <ClCompile Include="..\..\src\poser_mpfit.c" />
     <ClCompile Include="..\..\src\poser_octavioradii.c" />
     <ClCompile Include="..\..\src\poser_sba.c" />
     <ClCompile Include="..\..\src\poser_turveytori.c" />
     <ClCompile Include="..\..\src\survive.c" />
+    <ClCompile Include="..\..\src\survive_plugins.c" />
     <ClCompile Include="..\..\src\survive_api.c" />
     <ClCompile Include="..\..\src\survive_cal.c" />
-    <ClCompile Include="..\..\src\survive_charlesbiguator.c" />
+    <ClCompile Include="..\..\src\disambiguator_charles.c" />
     <ClCompile Include="..\..\src\survive_config.c" />
     <ClCompile Include="..\..\src\survive_default_devices.c" />
     <ClCompile Include="..\..\src\survive_disambiguator.c" />
@@ -278,10 +283,10 @@
     <ClCompile Include="..\..\src\survive_process.c" />
     <ClCompile Include="..\..\src\survive_reproject.c" />
     <ClCompile Include="..\..\src\survive_sensor_activations.c" />
-    <ClCompile Include="..\..\src\survive_statebased_disambiguator.c" />
-    <ClCompile Include="..\..\src\survive_turveybiguator.c" />
+    <ClCompile Include="..\..\src\disambiguator_statebased.c" />
+    <ClCompile Include="..\..\src\disambiguator_turvey.c" />
     <ClCompile Include="..\..\src\survive_usb.c" />
-    <ClCompile Include="..\..\src\survive_vive.c" />
+    <ClCompile Include="..\..\src\driver_vive.c" />
     <ClCompile Include="..\getdelim.c" />
   </ItemGroup>
   <ItemGroup>
@@ -301,6 +306,7 @@
     <ClInclude Include="..\..\src\epnp\epnp.h" />
     <ClInclude Include="..\..\src\ootx_decoder.h" />
     <ClInclude Include="..\..\src\poser_general_optimizer.h" />
+    <ClInclude Include="..\..\src\survive_optimizer.h" />
     <ClInclude Include="..\..\src\survive_cal.h" />
     <ClInclude Include="..\..\src\survive_config.h" />
     <ClInclude Include="..\..\src\survive_default_devices.h" />

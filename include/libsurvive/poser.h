@@ -3,7 +3,6 @@
 
 #include "survive_types.h"
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,20 +14,26 @@ typedef enum PoserType_t {
 	POSERDATA_FULL_SCENE,   // Full, statified X, Y sweep data for both lighthouses.
 	POSERDATA_DISASSOCIATE, // If you get this, it doesn't contain data.  It just tells you to please disassociate from
 							// the current SurviveObject and delete your poserdata.
-	POSERDATA_SYNC, // Sync pulse.
+	POSERDATA_SYNC,			// Sync pulse.
+	POSERDATA_LIGHT_GEN2,   // Gen2 lighting event.
+	POSERDATA_SYNC_GEN2,	// Gen2 sync pulse
+
 } PoserType;
 
-typedef void (*poser_pose_func)(SurviveObject *so, uint32_t lighthouse, SurvivePose *pose, void *user);
+typedef void (*poser_pose_func)(SurviveObject *so, uint32_t lighthouse, const SurvivePose *pose, void *user);
 typedef void (*poser_lighthouse_pose_func)(SurviveObject *so, uint8_t lighthouse, SurvivePose *lighthouse_pose,
 										   SurvivePose *object_pose, void *user);
 
 typedef struct
 {
 	PoserType pt;
+	uint32_t timecode; // In object-local ticks.
 	poser_pose_func poseproc;
 	poser_lighthouse_pose_func lighthouseposeproc;
 	void *userdata;
 } PoserData;
+
+SURVIVE_EXPORT int32_t PoserData_size(const PoserData *poser_data);
 
 /**
  * Meant to be used by individual posers to report back their findings on the pose of an object back to the invoker of
@@ -41,7 +46,21 @@ typedef struct
  * @param pose The actual object pose. This is in world space, not in LH space. It must represent a transformation from
  * object space of the SO to global space.
  */
-void PoserData_poser_pose_func(PoserData *poser_data, SurviveObject *so, SurvivePose *pose);
+SURVIVE_EXPORT void PoserData_poser_pose_func(PoserData *poser_data, SurviveObject *so, const SurvivePose *pose);
+
+/**
+ * Meant to be used by individual posers to report back their findings on the pose of an object back to the invoker of
+ * the call.
+ *
+ * @param poser_data the data pointer passed into the poser function invocation
+ * @param so The survive object which we are giving a solution for.
+ * @param lighthouse @deprecated The lighthouse which observed that position. Make it -1 if it was a combination of
+ * lighthouses. Will be removed in the future.
+ * @param pose The actual object pose. This is in world space, not in LH space. It must represent a transformation from
+ * object space of the SO to global space.
+ */
+SURVIVE_EXPORT void PoserData_poser_pose_func_with_velocity(PoserData *poser_data, SurviveObject *so,
+															const SurvivePose *pose, const SurviveVelocity *velocity);
 
 /**
  * Meant to be used by individual posers to report back their findings on the pose of a lighthouse.
@@ -52,15 +71,14 @@ void PoserData_poser_pose_func(PoserData *poser_data, SurviveObject *so, Survive
  * @param poser_data the data pointer passed into the poser function invocation
  * @param so The survive object which gave us the info for the solution
  * @param lighthouse The lighthouse which to solve for
- * @param objUp2world For use when solving for both ligthhouse positions. For the first invocation of this function,
- * pass in a zero-inited SurvivePose. This function will set that to a relative transform to normalize the space.
- * pass the same pose in again for the second lighthouse to get accurate results.
  * @param lighthouse_pose This is the assumed or derived position of the given lighthouse.
  * @param object_pose This is the assumed or derived position of the tracked object.
  */
-void PoserData_lighthouse_pose_func(PoserData *poser_data, SurviveObject *so, uint8_t lighthouse,
-									/* OUTPARAM */ SurvivePose *objUp2world, SurvivePose *lighthouse_pose,
-									SurvivePose *object_pose);
+SURVIVE_EXPORT void PoserData_lighthouse_pose_func(PoserData *poser_data, SurviveObject *so, uint8_t lighthouse,
+												   SurvivePose *lighthouse_pose, SurvivePose *object_pose);
+SURVIVE_EXPORT void PoserData_lighthouse_poses_func(PoserData *poser_data, SurviveObject *so,
+													SurvivePose *lighthouse_pose, uint32_t lighthouse_count,
+													SurvivePose *object_pose);
 
 typedef struct PoserDataIMU {
 	PoserData hdr;
@@ -68,30 +86,46 @@ typedef struct PoserDataIMU {
 	FLT accel[3];
 	FLT gyro[3];
 	FLT mag[3];
-	uint32_t timecode; //In object-local ticks.
 } PoserDataIMU;
 
 typedef struct PoserDataLight {
 	PoserData hdr;
 	int sensor_id;
-	int acode;			//OOTX Code associated with this sweep. bit 1 indicates vertical(1) or horizontal(0) sweep
 	int lh;             //Lighthouse making this sweep
-	uint32_t timecode;  //In object-local ticks.
-	FLT length;			//In seconds
 	FLT angle;			//In radians from center of lighthouse.
+
+	bool assume_current_pose; // Don't solve for object pose; use OutPoseIMU for LH solving
+	bool no_lighthouse_solve; // Don't solve for LH positions
 } PoserDataLight;
+
+typedef struct PoserDataLightGen1 {
+	PoserDataLight common;
+
+	int acode;  // OOTX Code associated with this sweep. bit 1 indicates vertical(1) or horizontal(0) sweep
+	FLT length; // In seconds
+} PoserDataLightGen1;
+
+typedef struct PoserDataLightGen2 {
+	PoserDataLight common;
+
+	int8_t plane;
+} PoserDataLightGen2;
 
 typedef struct
 {
 	PoserData hdr;
 
-	//If "lengths[...]" < 0, means not a valid piece of sweep information.
-	FLT  lengths[SENSORS_PER_OBJECT][NUM_LIGHTHOUSES][2];
-	FLT  angles [SENSORS_PER_OBJECT][NUM_LIGHTHOUSES][2];  //2 Axes  (Angles in LH space)
-	FLT  synctimes[SENSORS_PER_OBJECT][NUM_LIGHTHOUSES];
+	// If "lengths[...]" < 0, means not a valid piece of sweep information.
+	FLT lengths[SENSORS_PER_OBJECT][NUM_GEN1_LIGHTHOUSES][2];
+	FLT angles[SENSORS_PER_OBJECT][NUM_GEN2_LIGHTHOUSES][2]; // 2 Axes  (Angles in LH space)
 
 	PoserDataIMU lastimu;
 } PoserDataFullScene;
+
+struct SurviveSensorActivations_s;
+SURVIVE_EXPORT void PoserDataFullScene2Activations(const PoserDataFullScene *pdfs, struct SurviveSensorActivations_s *activations);
+SURVIVE_EXPORT void Activations2PoserDataFullScene(const struct SurviveSensorActivations_s *activations,
+												   PoserDataFullScene *pdfs);
 
 //When you write your posers, use the following definition, and register with REGISTER_LINKTIME.
 typedef int (*PoserCB)( SurviveObject * so, PoserData * pd );
